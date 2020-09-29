@@ -110,6 +110,7 @@ impl BroadcastSignedTransaction for Wallet {
 impl GetRawTransaction for Wallet {
     async fn get_raw_transaction(&self, txid: Txid) -> Result<Transaction> {
         let tx = self.0.get_raw_transaction(txid).await?;
+        tracing::info!("{}", tx.txid());
 
         Ok(tx)
     }

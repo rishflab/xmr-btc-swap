@@ -11,6 +11,123 @@ use ecdsa_fun::{
 };
 use rand::{CryptoRng, RngCore};
 use sha2::Sha256;
+use std::convert::TryFrom;
+
+#[derive(Debug)]
+pub enum State {
+    State0(State0),
+    State1(State1),
+    State2(State2),
+    State2b(State2b),
+    State3(State3),
+    State4(State4),
+}
+
+#[derive(Debug)]
+pub enum Message {
+    Message0(Message0),
+    Message1(Message1),
+    Message2(Message2),
+    Message3(Message3),
+}
+
+impl From<Message0> for Message {
+    fn from(m: Message0) -> Self {
+        Message::Message0(m)
+    }
+}
+
+impl TryFrom<Message> for Message0 {
+    type Error = UnexpectedMessage;
+
+    fn try_from(m: Message) -> Result<Self, Self::Error> {
+        match m {
+            Message::Message0(m) => Ok(m),
+            _ => Err(UnexpectedMessage {
+                expected_type: "Create0".to_string(),
+                received: m,
+            }),
+        }
+    }
+}
+
+impl From<Message1> for Message {
+    fn from(m: Message1) -> Self {
+        Message::Message1(m)
+    }
+}
+
+impl TryFrom<Message> for Message1 {
+    type Error = UnexpectedMessage;
+
+    fn try_from(m: Message) -> Result<Self, Self::Error> {
+        match m {
+            Message::Message1(m) => Ok(m),
+            _ => Err(UnexpectedMessage {
+                expected_type: "Create0".to_string(),
+                received: m,
+            }),
+        }
+    }
+}
+
+impl From<Message2> for Message {
+    fn from(m: Message2) -> Self {
+        Message::Message2(m)
+    }
+}
+
+impl TryFrom<Message> for Message2 {
+    type Error = UnexpectedMessage;
+
+    fn try_from(m: Message) -> Result<Self, Self::Error> {
+        match m {
+            Message::Message2(m) => Ok(m),
+            _ => Err(UnexpectedMessage {
+                expected_type: "Create0".to_string(),
+                received: m,
+            }),
+        }
+    }
+}
+
+impl From<Message3> for Message {
+    fn from(m: Message3) -> Self {
+        Message::Message3(m)
+    }
+}
+
+impl TryFrom<Message> for Message3 {
+    type Error = UnexpectedMessage;
+
+    fn try_from(m: Message) -> Result<Self, Self::Error> {
+        match m {
+            Message::Message3(m) => Ok(m),
+            _ => Err(UnexpectedMessage {
+                expected_type: "Create0".to_string(),
+                received: m,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("expected message of type {expected_type}, got {received:?}")]
+pub struct UnexpectedMessage {
+    expected_type: String,
+    received: Message,
+}
+
+impl UnexpectedMessage {
+    pub fn new<T>(received: Message) -> Self {
+        let expected_type = std::any::type_name::<T>();
+
+        Self {
+            expected_type: expected_type.to_string(),
+            received,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Message0 {
@@ -234,6 +351,7 @@ impl State2 {
     {
         let signed_tx_lock = bitcoin_wallet.sign_tx_lock(self.tx_lock.clone()).await?;
 
+        tracing::info!("{}", self.tx_lock.txid());
         let _ = bitcoin_wallet
             .broadcast_signed_transaction(signed_tx_lock)
             .await?;
@@ -280,6 +398,7 @@ pub struct State2b {
 }
 
 impl State2b {
+    // todo: loop until punish? timelock has expired
     pub async fn watch_for_lock_xmr<W>(self, xmr_wallet: &W, msg: alice::Message2) -> Result<State3>
     where
         W: monero::CheckTransfer,
@@ -359,7 +478,6 @@ impl State2b {
         }
         Ok(())
     }
-
     #[cfg(test)]
     pub fn tx_lock_id(&self) -> bitcoin::Txid {
         self.tx_lock.txid()
@@ -468,5 +586,9 @@ impl State4 {
         monero_wallet.import_output(s, self.v).await?;
 
         Ok(())
+    }
+    #[cfg(test)]
+    pub fn tx_lock_id(&self) -> bitcoin::Txid {
+        self.tx_lock.txid()
     }
 }

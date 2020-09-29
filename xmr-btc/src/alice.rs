@@ -5,6 +5,125 @@ use rand::{CryptoRng, RngCore};
 use crate::{bitcoin, bitcoin::GetRawTransaction, bob, monero, monero::ImportOutput};
 use ecdsa_fun::{nonce::Deterministic, Signature};
 use sha2::Sha256;
+use std::convert::TryFrom;
+
+#[derive(Debug)]
+pub enum State {
+    State0(State0),
+    State1(State1),
+    State2(State2),
+    State3(State3),
+    State4(State4),
+    State4b(State4b),
+    State5(State5),
+}
+
+#[derive(Debug)]
+pub enum Message {
+    Message0(Message0),
+    Message1(Message1),
+    Message2(Message2),
+}
+
+impl From<Message0> for Message {
+    fn from(m: Message0) -> Self {
+        Message::Message0(m)
+    }
+}
+
+impl TryFrom<Message> for Message0 {
+    type Error = UnexpectedMessage;
+
+    fn try_from(m: Message) -> Result<Self, Self::Error> {
+        match m {
+            Message::Message0(m) => Ok(m),
+            _ => Err(UnexpectedMessage {
+                expected_type: "Create0".to_string(),
+                received: m,
+            }),
+        }
+    }
+}
+
+impl From<Message1> for Message {
+    fn from(m: Message1) -> Self {
+        Message::Message1(m)
+    }
+}
+
+impl TryFrom<Message> for Message1 {
+    type Error = UnexpectedMessage;
+
+    fn try_from(m: Message) -> Result<Self, Self::Error> {
+        match m {
+            Message::Message1(m) => Ok(m),
+            _ => Err(UnexpectedMessage {
+                expected_type: "Create0".to_string(),
+                received: m,
+            }),
+        }
+    }
+}
+
+impl From<Message2> for Message {
+    fn from(m: Message2) -> Self {
+        Message::Message2(m)
+    }
+}
+
+impl TryFrom<Message> for Message2 {
+    type Error = UnexpectedMessage;
+
+    fn try_from(m: Message) -> Result<Self, Self::Error> {
+        match m {
+            Message::Message2(m) => Ok(m),
+            _ => Err(UnexpectedMessage {
+                expected_type: "Create0".to_string(),
+                received: m,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("expected message of type {expected_type}, got {received:?}")]
+pub struct UnexpectedMessage {
+    expected_type: String,
+    received: Message,
+}
+
+impl UnexpectedMessage {
+    pub fn new<T>(received: Message) -> Self {
+        let expected_type = std::any::type_name::<T>();
+
+        Self {
+            expected_type: expected_type.to_string(),
+            received,
+        }
+    }
+}
+
+impl State {
+    pub fn new<R: RngCore + CryptoRng>(
+        rng: &mut R,
+        btc: bitcoin::Amount,
+        xmr: monero::Amount,
+        refund_timelock: u32,
+        punish_timelock: u32,
+        redeem_address: bitcoin::Address,
+        punish_address: bitcoin::Address,
+    ) -> Self {
+        Self::State0(State0::new(
+            rng,
+            btc,
+            xmr,
+            refund_timelock,
+            punish_timelock,
+            redeem_address,
+            punish_address,
+        ))
+    }
+}
 
 #[derive(Debug)]
 pub struct Message0 {
@@ -252,9 +371,12 @@ impl State3 {
     where
         W: bitcoin::GetRawTransaction,
     {
-        let _ = bitcoin_wallet
+        tracing::info!("{}", self.tx_lock.txid());
+        let tx = bitcoin_wallet
             .get_raw_transaction(self.tx_lock.txid())
             .await?;
+
+        tracing::info!("{}", tx.txid());
 
         Ok(State4 {
             a: self.a,
@@ -298,7 +420,7 @@ pub struct State4 {
 }
 
 impl State4 {
-    pub async fn lock_xmr<W>(self, monero_wallet: &W) -> Result<(State4b, monero::Amount)>
+    pub async fn lock_xmr<W>(self, monero_wallet: &W) -> Result<State4b>
     where
         W: monero::Transfer,
     {
@@ -311,28 +433,26 @@ impl State4 {
             .transfer(S_a + S_b, self.v.public(), self.xmr)
             .await?;
 
-        Ok((
-            State4b {
-                a: self.a,
-                B: self.B,
-                s_a: self.s_a,
-                S_b_monero: self.S_b_monero,
-                S_b_bitcoin: self.S_b_bitcoin,
-                v: self.v,
-                btc: self.btc,
-                xmr: self.xmr,
-                refund_timelock: self.refund_timelock,
-                punish_timelock: self.punish_timelock,
-                refund_address: self.refund_address,
-                redeem_address: self.redeem_address,
-                punish_address: self.punish_address,
-                tx_lock: self.tx_lock,
-                tx_lock_proof,
-                tx_punish_sig_bob: self.tx_punish_sig_bob,
-                tx_cancel_sig_bob: self.tx_cancel_sig_bob,
-            },
-            fee,
-        ))
+        Ok(State4b {
+            a: self.a,
+            B: self.B,
+            s_a: self.s_a,
+            S_b_monero: self.S_b_monero,
+            S_b_bitcoin: self.S_b_bitcoin,
+            v: self.v,
+            btc: self.btc,
+            xmr: self.xmr,
+            refund_timelock: self.refund_timelock,
+            punish_timelock: self.punish_timelock,
+            refund_address: self.refund_address,
+            redeem_address: self.redeem_address,
+            punish_address: self.punish_address,
+            tx_lock: self.tx_lock,
+            tx_lock_proof,
+            tx_punish_sig_bob: self.tx_punish_sig_bob,
+            tx_cancel_sig_bob: self.tx_cancel_sig_bob,
+            lock_xmr_fee: fee,
+        })
     }
 
     pub async fn punish<W: bitcoin::BroadcastSignedTransaction>(
@@ -401,6 +521,7 @@ pub struct State4b {
     tx_lock_proof: monero::TransferProof,
     tx_punish_sig_bob: bitcoin::Signature,
     tx_cancel_sig_bob: bitcoin::Signature,
+    lock_xmr_fee: monero::Amount,
 }
 
 impl State4b {
@@ -428,6 +549,7 @@ impl State4b {
             tx_lock: self.tx_lock,
             tx_punish_sig_bob: self.tx_punish_sig_bob,
             tx_redeem_encsig: msg.tx_redeem_encsig,
+            lock_xmr_fee: self.lock_xmr_fee,
         }
     }
 
@@ -487,6 +609,7 @@ pub struct State5 {
     tx_lock: bitcoin::TxLock,
     tx_punish_sig_bob: bitcoin::Signature,
     tx_redeem_encsig: EncryptedSignature,
+    lock_xmr_fee: monero::Amount,
 }
 
 impl State5 {
@@ -512,5 +635,9 @@ impl State5 {
             .await?;
 
         Ok(())
+    }
+
+    pub fn lock_xmr_fee(&self) -> monero::Amount {
+        self.lock_xmr_fee
     }
 }
