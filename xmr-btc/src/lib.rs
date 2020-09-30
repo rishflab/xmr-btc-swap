@@ -13,15 +13,15 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![forbid(unsafe_code)]
 #![allow(non_snake_case)]
-use crate::{alice::State, bitcoin::BroadcastSignedTransaction};
+use crate::{bitcoin::BroadcastSignedTransaction};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use futures::{
-    task::{Context, Poll},
-    Stream,
-};
+
 use rand::{CryptoRng, RngCore};
-use std::{convert::TryInto, pin::Pin};
+use std::{convert::TryInto};
+use std::{
+    future::Future,
+};
 use tokio::{
     stream::StreamExt,
     sync::{
@@ -29,6 +29,7 @@ use tokio::{
         mpsc::{Receiver, Sender},
     },
 };
+use genawaiter::sync::Gen;
 
 pub mod alice;
 pub mod bitcoin;
@@ -67,58 +68,6 @@ pub fn new_alice_and_bob() -> (
     };
 
     (alice_node, bob_node)
-}
-
-impl Node<alice::Message, bob::Message> {
-    pub async fn run<
-        R: RngCore + CryptoRng,
-        B: bitcoin::GetRawTransaction + BroadcastSignedTransaction,
-        M: monero::Transfer,
-    >(
-        &mut self,
-        state0: alice::State0,
-        rng: &mut R,
-        bitcoin_wallet: &B,
-        monero_wallet: &M,
-    ) -> Result<alice::State5> {
-        self.transport
-            .sender
-            .send(state0.next_message(rng).into())
-            .await?;
-
-        let bob_message0: bob::Message0 = self.transport.receive_message().await?.try_into()?;
-        let state1 = state0.receive(bob_message0)?;
-
-        let bob_message1: bob::Message1 = self.transport.receive_message().await?.try_into()?;
-        let state2 = state1.receive(bob_message1);
-        let alice_message1: alice::Message1 = state2.next_message();
-        self.transport.sender.send(alice_message1.into()).await?;
-
-        let bob_message2: bob::Message2 = self.transport.receive_message().await?.try_into()?;
-        let state3 = state2.receive(bob_message2)?;
-
-        tokio::time::delay_for(std::time::Duration::new(5, 0)).await;
-
-        tracing::info!("alice is watching for locked btc");
-        let state4 = state3.watch_for_lock_btc(bitcoin_wallet).await?;
-        let state4b = state4.lock_xmr(monero_wallet).await?;
-
-        self.transport
-            .sender
-            .send(state4b.next_message().into())
-            .await?;
-
-        // pass in state4b as a parameter somewhere in this call to prevent the user
-        // from waiting for a message that wont be sent
-        let message3: bob::Message3 = self.transport.receive_message().await?.try_into()?;
-        // dbg!(&message3);
-
-        let state5 = state4b.receive(message3);
-
-        state5.redeem_btc(bitcoin_wallet).await.unwrap();
-
-        Ok(state5)
-    }
 }
 
 impl Node<bob::Message, alice::Message> {
@@ -314,7 +263,7 @@ mod tests {
         let (mut alice, mut bob) = new_alice_and_bob();
 
         let (alice_state5, bob_state4) = future::try_join(
-            alice.run(
+            alice.(
                 alice_state0,
                 &mut OsRng,
                 &alice_btc_wallet,

@@ -9,7 +9,7 @@ use ecdsa_fun::{nonce::Deterministic, Signature};
 use sha2::Sha256;
 use std::convert::TryFrom;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum State {
     State0(State0),
     State1(State1),
@@ -20,7 +20,25 @@ pub enum State {
     State5(State5),
 }
 
-#[derive(Debug)]
+macro_rules! impl_from_child_state {
+    ($type:ident) => {
+       impl From<$type> for State {
+            fn from(from: $type) -> Self {
+                State::$type(from)
+            }
+        }
+    };
+}
+
+impl_from_child_state!(State0);
+impl_from_child_state!(State1);
+impl_from_child_state!(State2);
+impl_from_child_state!(State3);
+impl_from_child_state!(State4);
+impl_from_child_state!(State4b);
+impl_from_child_state!(State5);
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Message0(Message0),
     Message1(Message1),
@@ -87,7 +105,7 @@ impl TryFrom<Message> for Message2 {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone)]
 #[error("expected message of type {expected_type}, got {received:?}")]
 pub struct UnexpectedMessage {
     expected_type: String,
@@ -127,7 +145,7 @@ impl State {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Message0 {
     pub(crate) A: bitcoin::PublicKey,
     pub(crate) S_a_monero: monero::PublicKey,
@@ -149,7 +167,7 @@ pub struct Message2 {
     pub(crate) tx_lock_proof: monero::TransferProof,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State0 {
     a: bitcoin::SecretKey,
     s_a: cross_curve_dleq::Scalar,
@@ -235,7 +253,7 @@ impl State0 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State1 {
     a: bitcoin::SecretKey,
     B: bitcoin::PublicKey,
@@ -273,7 +291,7 @@ impl State1 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State2 {
     a: bitcoin::SecretKey,
     B: bitcoin::PublicKey,
@@ -348,7 +366,7 @@ impl State2 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State3 {
     a: bitcoin::SecretKey,
     B: bitcoin::PublicKey,
@@ -401,7 +419,7 @@ impl State3 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State4 {
     a: bitcoin::SecretKey,
     B: bitcoin::PublicKey,
@@ -504,7 +522,7 @@ impl State4 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State4b {
     a: bitcoin::SecretKey,
     B: bitcoin::PublicKey,
@@ -593,7 +611,7 @@ impl State4b {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State5 {
     a: bitcoin::SecretKey,
     B: bitcoin::PublicKey,
