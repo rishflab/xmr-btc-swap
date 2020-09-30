@@ -1,3 +1,5 @@
+pub mod node;
+
 use anyhow::{anyhow, Result};
 use ecdsa_fun::adaptor::{Adaptor, EncryptedSignature};
 use rand::{CryptoRng, RngCore};
