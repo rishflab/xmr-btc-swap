@@ -13,13 +13,10 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![forbid(unsafe_code)]
 #![allow(non_snake_case)]
-use crate::bitcoin::BroadcastSignedTransaction;
+
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
-use genawaiter::sync::Gen;
-use rand::{CryptoRng, RngCore};
-use std::{convert::TryInto, future::Future};
 use tokio::{
     stream::StreamExt,
     sync::{
@@ -58,25 +55,6 @@ pub fn new_alice_and_bob() -> (
 
     (a_transport, b_transport)
 }
-
-// impl Node<bob::Message, alice::Message> {
-//     pub async fn run<
-//         R: RngCore + CryptoRng,
-//         B: bitcoin::GetRawTransaction
-//             + bitcoin::BuildTxLockPsbt
-//             + bitcoin::SignTxLock
-//             + bitcoin::BroadcastSignedTransaction,
-//         M: monero::CheckTransfer + monero::ImportOutput,
-//     >(
-//         &mut self,
-//         state0: bob::State0,
-//         rng: &mut R,
-//         bitcoin_wallet: &B,
-//         monero_wallet: &M,
-//     ) -> Result<bob::State4> {
-//
-//     }
-// }
 
 #[derive(Debug)]
 pub struct Transport<S, R> {
@@ -288,6 +266,10 @@ mod tests {
 
     #[tokio::test]
     async fn both_refund() {
+        let _guard = tracing_subscriber::fmt()
+            .with_env_filter("info")
+            .set_default();
+
         let cli = Cli::default();
         let monero = Monero::new(&cli);
         let bitcoind = init_bitcoind(&cli).await;
@@ -322,6 +304,8 @@ mod tests {
         let refund_timelock = 1;
         let punish_timelock = 1;
 
+        let (mut alice_transport, mut bob_transport) = new_alice_and_bob();
+
         let alice_state0 = alice::State0::new(
             &mut OsRng,
             btc_amount,
@@ -340,34 +324,34 @@ mod tests {
             refund_address.clone(),
         );
 
-        let alice_message0 = alice_state0.next_message(&mut OsRng);
-        let bob_message0 = bob_state0.next_message(&mut OsRng);
+        let mut alice = Alice;
+        let mut bob = Bob;
+        let mut rng1 = OsRng;
+        let mut rng2 = OsRng;
+        let alice_gen = alice.run_alice(
+            &mut alice_transport,
+            alice_state0,
+            &mut rng1,
+            &alice_btc_wallet,
+            &alice_monero_wallet,
+        );
 
-        let alice_state1 = alice_state0.receive(bob_message0).unwrap();
-        let bob_state1 = bob_state0
-            .receive(&bob_btc_wallet, alice_message0)
-            .await
-            .unwrap();
+        let bob_gen = bob.run_bob(
+            &mut bob_transport,
+            bob_state0,
+            &mut rng2,
+            &bob_btc_wallet,
+            &bob_monero_wallet,
+        );
 
-        let bob_message1 = bob_state1.next_message();
-        let alice_state2 = alice_state1.receive(bob_message1);
-        let alice_message1 = alice_state2.next_message();
-        let bob_state2 = bob_state1.receive(alice_message1).unwrap();
+        let alice_fut = run_alice_until(alice_gen, alice::is_state4b);
+        let bob_fut = run_bob_until(bob_gen, bob::is_state2b);
 
-        let bob_message2 = bob_state2.next_message();
-        let alice_state3 = alice_state2.receive(bob_message2).unwrap();
-
-        let bob_state2b = bob_state2.lock_btc(&bob_btc_wallet).await.unwrap();
-
-        let alice_state4 = alice_state3
-            .watch_for_lock_btc(&alice_btc_wallet)
-            .await
-            .unwrap();
-
-        let alice_state4b = alice_state4.lock_xmr(&alice_monero_wallet).await.unwrap();
+        let (alice_state, bob_state) = future::try_join(alice_fut, bob_fut).await.unwrap();
+        let alice_state4b: alice::State4b = alice_state.try_into().unwrap();
+        let bob_state2b: bob::State2b = bob_state.try_into().unwrap();
 
         bob_state2b.refund_btc(&bob_btc_wallet).await.unwrap();
-
         alice_state4b
             .refund_xmr(&alice_btc_wallet, &alice_monero_wallet)
             .await
@@ -408,6 +392,7 @@ mod tests {
     async fn alice_punishes() {
         let cli = Cli::default();
         let bitcoind = init_bitcoind(&cli).await;
+        let monero = Monero::new(&cli);
 
         // must be bigger than our hardcoded fee of 10_000
         let btc_amount = bitcoin::Amount::from_sat(10_000_000);
@@ -420,6 +405,15 @@ mod tests {
             .await
             .unwrap();
 
+        let fund_alice = TEN_XMR;
+        let fund_bob = 0;
+
+        // todo: introduce dummy type for monero wallet that doesnt start a node as it
+        // is not required for this test
+        monero.init(fund_alice, fund_bob).await.unwrap();
+        let alice_monero_wallet = monero::AliceWallet(&monero);
+        let bob_monero_wallet = monero::BobWallet(&monero);
+
         let alice_initial_btc_balance = alice_btc_wallet.balance().await.unwrap();
         let bob_initial_btc_balance = bob_btc_wallet.balance().await.unwrap();
 
@@ -429,6 +423,8 @@ mod tests {
 
         let refund_timelock = 1;
         let punish_timelock = 1;
+
+        let (mut alice_transport, mut bob_transport) = new_alice_and_bob();
 
         let alice_state0 = alice::State0::new(
             &mut OsRng,
@@ -448,29 +444,32 @@ mod tests {
             refund_address.clone(),
         );
 
-        let alice_message0 = alice_state0.next_message(&mut OsRng);
-        let bob_message0 = bob_state0.next_message(&mut OsRng);
+        let mut alice = Alice;
+        let mut bob = Bob;
+        let mut rng1 = OsRng;
+        let mut rng2 = OsRng;
+        let alice_gen = alice.run_alice(
+            &mut alice_transport,
+            alice_state0,
+            &mut rng1,
+            &alice_btc_wallet,
+            &alice_monero_wallet,
+        );
 
-        let alice_state1 = alice_state0.receive(bob_message0).unwrap();
-        let bob_state1 = bob_state0
-            .receive(&bob_btc_wallet, alice_message0)
-            .await
-            .unwrap();
+        let bob_gen = bob.run_bob(
+            &mut bob_transport,
+            bob_state0,
+            &mut rng2,
+            &bob_btc_wallet,
+            &bob_monero_wallet,
+        );
 
-        let bob_message1 = bob_state1.next_message();
-        let alice_state2 = alice_state1.receive(bob_message1);
-        let alice_message1 = alice_state2.next_message();
-        let bob_state2 = bob_state1.receive(alice_message1).unwrap();
+        let alice_fut = run_alice_until(alice_gen, alice::is_state4);
+        let bob_fut = run_bob_until(bob_gen, bob::is_state2b);
 
-        let bob_message2 = bob_state2.next_message();
-        let alice_state3 = alice_state2.receive(bob_message2).unwrap();
-
-        let bob_state2b = bob_state2.lock_btc(&bob_btc_wallet).await.unwrap();
-
-        let alice_state4 = alice_state3
-            .watch_for_lock_btc(&alice_btc_wallet)
-            .await
-            .unwrap();
+        let (alice_state, bob_state) = future::try_join(alice_fut, bob_fut).await.unwrap();
+        let alice_state4: alice::State4 = alice_state.try_into().unwrap();
+        let bob_state2b: bob::State2b = bob_state.try_into().unwrap();
 
         alice_state4.punish(&alice_btc_wallet).await.unwrap();
 

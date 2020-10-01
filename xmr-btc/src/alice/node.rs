@@ -7,8 +7,8 @@ use genawaiter::GeneratorState;
 use rand::{CryptoRng, RngCore};
 
 use crate::bitcoin::BroadcastSignedTransaction;
-use std::mem::Discriminant;
 
+// todo: move params fron run_alice function into this struct
 pub struct Alice;
 
 pub async fn run_alice_until(
@@ -68,6 +68,7 @@ impl Alice {
             co.yield_(alice::State::State4(state4.clone())).await;
 
             let state4b = state4.lock_xmr(monero_wallet).await?;
+            tracing::info!("alice has locked xmr");
             co.yield_(alice::State::State4b(state4b.clone())).await;
 
             transport.sender.send(state4b.next_message().into()).await?;
@@ -75,7 +76,6 @@ impl Alice {
             // pass in state4b as a parameter somewhere in this call to prevent the user
             // from waiting for a message that wont be sent
             let message3: bob::Message3 = transport.receive_message().await?.try_into()?;
-            // dbg!(&message3);
 
             let state5 = state4b.receive(message3);
             state5.redeem_btc(bitcoin_wallet).await.unwrap();
@@ -83,52 +83,5 @@ impl Alice {
 
             Ok(alice::State::from(state5))
         })
-    }
-}
-
-async fn async_two() -> Result<i32> {
-    Ok(2)
-}
-
-pub fn run_even() -> Gen<i32, (), impl Future<Output = anyhow::Result<i32>>> {
-    Gen::new(|co| async move {
-        let mut n = async_two().await?;
-        while n < 100 {
-            co.yield_(n).await;
-            n += 2;
-        }
-        Ok(n)
-    })
-}
-
-pub async fn run_even_until(even_number: i32) -> Result<i32> {
-    let mut even = run_even();
-    loop {
-        match even.async_resume().await {
-            GeneratorState::Yielded(i) => {
-                if i == even_number {
-                    return Ok(i);
-                }
-            }
-            GeneratorState::Complete(r) => return r,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tracing_subscriber::util::SubscriberInitExt;
-
-    use crate::alice::node::run_even_until;
-
-    #[tokio::test]
-    async fn gen() {
-        let _guard = tracing_subscriber::fmt()
-            .with_env_filter("info")
-            .set_default();
-
-        let (a, b) = futures::future::join(run_even_until(16), run_even_until(10)).await;
-        tracing::info!("{:?}", a);
-        tracing::info!("{:?}", b);
     }
 }

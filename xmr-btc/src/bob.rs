@@ -64,9 +64,17 @@ impl_from_child_state!(State2b);
 impl_from_child_state!(State3);
 impl_from_child_state!(State4);
 
+// todo: use macro
 pub fn is_state4(state: &State) -> bool {
     match state {
         State::State4 { .. } => true,
+        _ => false,
+    }
+}
+
+pub fn is_state2b(state: &State) -> bool {
+    match state {
+        State::State2b { .. } => true,
         _ => false,
     }
 }

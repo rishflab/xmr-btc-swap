@@ -20,9 +20,22 @@ pub enum State {
     State5(State5),
 }
 
+// todo: use macro
 pub fn is_state0(state: &State) -> bool {
     match state {
         State::State0 { .. } => true,
+        _ => false,
+    }
+}
+pub fn is_state4(state: &State) -> bool {
+    match state {
+        State::State4 { .. } => true,
+        _ => false,
+    }
+}
+pub fn is_state4b(state: &State) -> bool {
+    match state {
+        State::State4b { .. } => true,
         _ => false,
     }
 }
@@ -32,17 +45,6 @@ pub fn is_state5(state: &State) -> bool {
         _ => false,
     }
 }
-
-// impl TryFrom<State> for State5 {
-//     type Error = &'static str;
-//     fn try_from(from: State) -> Result<Self> {
-//         if let State::State5(state) = from {
-//             Ok(state)
-//         } else {
-//             Err(anyhow!("Failed to convert parent state to child state"))
-//         }
-//     }
-// }
 
 macro_rules! impl_try_from_parent_state {
     ($type:ident) => {
