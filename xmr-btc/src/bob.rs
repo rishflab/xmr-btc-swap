@@ -1,3 +1,5 @@
+pub mod node;
+
 use crate::{
     alice,
     bitcoin::{self, BuildTxLockPsbt, GetRawTransaction, TxCancel},
@@ -21,6 +23,52 @@ pub enum State {
     State2b(State2b),
     State3(State3),
     State4(State4),
+}
+
+macro_rules! impl_try_from_parent_state {
+    ($type:ident) => {
+        impl TryFrom<State> for $type {
+            type Error = anyhow::Error;
+            fn try_from(from: State) -> Result<Self> {
+                if let State::$type(state) = from {
+                    Ok(state)
+                } else {
+                    Err(anyhow!("Failed to convert parent state to child state"))
+                }
+            }
+        }
+    };
+}
+
+impl_try_from_parent_state!(State0);
+impl_try_from_parent_state!(State1);
+impl_try_from_parent_state!(State2);
+impl_try_from_parent_state!(State2b);
+impl_try_from_parent_state!(State3);
+impl_try_from_parent_state!(State4);
+
+macro_rules! impl_from_child_state {
+    ($type:ident) => {
+        impl From<$type> for State {
+            fn from(from: $type) -> Self {
+                State::$type(from)
+            }
+        }
+    };
+}
+
+impl_from_child_state!(State0);
+impl_from_child_state!(State1);
+impl_from_child_state!(State2);
+impl_from_child_state!(State2b);
+impl_from_child_state!(State3);
+impl_from_child_state!(State4);
+
+pub fn is_state4(state: &State) -> bool {
+    match state {
+        State::State4 { .. } => true,
+        _ => false,
+    }
 }
 
 #[derive(Debug)]
@@ -243,7 +291,7 @@ impl State0 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State1 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
@@ -306,7 +354,7 @@ impl State1 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State2 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
@@ -549,7 +597,7 @@ impl State3 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State4 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,

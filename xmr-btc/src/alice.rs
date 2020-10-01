@@ -20,9 +20,56 @@ pub enum State {
     State5(State5),
 }
 
+pub fn is_state0(state: &State) -> bool {
+    match state {
+        State::State0 { .. } => true,
+        _ => false,
+    }
+}
+pub fn is_state5(state: &State) -> bool {
+    match state {
+        State::State5 { .. } => true,
+        _ => false,
+    }
+}
+
+// impl TryFrom<State> for State5 {
+//     type Error = &'static str;
+//     fn try_from(from: State) -> Result<Self> {
+//         if let State::State5(state) = from {
+//             Ok(state)
+//         } else {
+//             Err(anyhow!("Failed to convert parent state to child state"))
+//         }
+//     }
+// }
+
+macro_rules! impl_try_from_parent_state {
+    ($type:ident) => {
+        impl TryFrom<State> for $type {
+            type Error = anyhow::Error;
+            fn try_from(from: State) -> Result<Self> {
+                if let State::$type(state) = from {
+                    Ok(state)
+                } else {
+                    Err(anyhow!("Failed to convert parent state to child state"))
+                }
+            }
+        }
+    };
+}
+
+impl_try_from_parent_state!(State0);
+impl_try_from_parent_state!(State1);
+impl_try_from_parent_state!(State2);
+impl_try_from_parent_state!(State3);
+impl_try_from_parent_state!(State4);
+impl_try_from_parent_state!(State4b);
+impl_try_from_parent_state!(State5);
+
 macro_rules! impl_from_child_state {
     ($type:ident) => {
-       impl From<$type> for State {
+        impl From<$type> for State {
             fn from(from: $type) -> Self {
                 State::$type(from)
             }
@@ -38,7 +85,7 @@ impl_from_child_state!(State4);
 impl_from_child_state!(State4b);
 impl_from_child_state!(State5);
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Message {
     Message0(Message0),
     Message1(Message1),
@@ -105,7 +152,7 @@ impl TryFrom<Message> for Message2 {
     }
 }
 
-#[derive(Debug, thiserror::Error, Clone)]
+#[derive(Debug, thiserror::Error)]
 #[error("expected message of type {expected_type}, got {received:?}")]
 pub struct UnexpectedMessage {
     expected_type: String,
@@ -145,7 +192,7 @@ impl State {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Message0 {
     pub(crate) A: bitcoin::PublicKey,
     pub(crate) S_a_monero: monero::PublicKey,
