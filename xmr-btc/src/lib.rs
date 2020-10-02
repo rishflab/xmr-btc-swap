@@ -15,12 +15,9 @@
 #![allow(non_snake_case)]
 
 use crate::transport::Transport;
-use tokio::{
-    stream::StreamExt,
-    sync::{
-        mpsc,
-        mpsc::{Receiver, Sender},
-    },
+use tokio::sync::{
+    mpsc,
+    mpsc::{Receiver, Sender},
 };
 
 pub mod alice;
@@ -53,13 +50,8 @@ pub fn new_alice_and_bob() -> (
 #[cfg(test)]
 mod tests {
     use crate::{
-        alice,
-        alice::node::run_alice_until,
-        bitcoin,
-        bitcoin::{Amount, TX_FEE},
-        bob,
-        bob::node::run_bob_until,
-        monero, new_alice_and_bob,
+        alice, alice::node::run_alice_until, bitcoin, bob, bob::node::run_bob_until, monero,
+        new_alice_and_bob,
     };
     use bitcoin_harness::Bitcoind;
     use futures::future;
@@ -70,6 +62,8 @@ mod tests {
     use tracing_subscriber::util::SubscriberInitExt;
 
     const TEN_XMR: u64 = 10_000_000_000_000;
+    const RELATIVE_REFUND_TIMELOCK: u32 = 1;
+    const RELATIVE_PUNISH_TIMELOCK: u32 = 1;
 
     pub async fn init_bitcoind(tc_client: &Cli) -> Bitcoind<'_> {
         let bitcoind = Bitcoind::new(tc_client, "0.19.1").expect("failed to create bitcoind");
@@ -78,14 +72,26 @@ mod tests {
         bitcoind
     }
 
-    pub async fn init_test() {}
+    pub struct InitialBalances {
+        alice_xmr: u64,
+        alice_btc: bitcoin::Amount,
+        bob_xmr: u64,
+        bob_btc: bitcoin::Amount,
+    }
 
-    #[tokio::test]
-    async fn happy_path_async() {
-        let _guard = tracing_subscriber::fmt()
-            .with_env_filter("info")
-            .set_default();
+    pub struct SwapAmounts {
+        xmr: monero::Amount,
+        btc: bitcoin::Amount,
+    }
 
+    pub async fn init_test<Ba, Ma, Bb, Mb>() -> (
+        alice::State0,
+        bob::State0,
+        alice::node::Node<Ba, Ma>,
+        bob::node::Node<Bb, Mb>,
+        InitialBalances,
+        SwapAmounts,
+    ) {
         let cli = Cli::default();
         let monero = Monero::new(&cli);
         let bitcoind = init_bitcoind(&cli).await;
@@ -93,6 +99,11 @@ mod tests {
         // must be bigger than our hardcoded fee of 10_000
         let btc_amount = bitcoin::Amount::from_sat(10_000_000);
         let xmr_amount = monero::Amount::from_piconero(1_000_000_000_000);
+
+        let swap_amounts = SwapAmounts {
+            xmr: xmr_amount,
+            btc: btc_amount,
+        };
 
         let fund_alice = TEN_XMR;
         let fund_bob = 0;
@@ -108,25 +119,29 @@ mod tests {
             .await
             .unwrap();
 
-        let alice_initial_btc_balance = alice_btc_wallet.balance().await.unwrap();
-        let bob_initial_btc_balance = bob_btc_wallet.balance().await.unwrap();
+        let (mut alice_transport, mut bob_transport) = new_alice_and_bob();
 
-        let alice_initial_xmr_balance = alice_monero_wallet.0.get_balance_alice().await.unwrap();
-        let bob_initial_xmr_balance = bob_monero_wallet.0.get_balance_bob().await.unwrap();
+        let mut alice =
+            alice::node::Node::new(alice_transport, alice_btc_wallet, alice_monero_wallet);
 
-        let redeem_address = alice_btc_wallet.new_address().await.unwrap();
+        let mut bob = bob::node::Node::new(bob_transport, bob_btc_wallet, bob_monero_wallet);
+
+        let alice_initial_btc_balance = alice.bitcoin_wallet.balance().await.unwrap();
+        let bob_initial_btc_balance = bob.bitcoin_wallet.balance().await.unwrap();
+
+        let alice_initial_xmr_balance = alice.monero_wallet.0.get_balance_alice().await.unwrap();
+        let bob_initial_xmr_balance = bob.monero_wallet.0.get_balance_bob().await.unwrap();
+
+        let redeem_address = alice.bitcoin_wallet.new_address().await.unwrap();
         let punish_address = redeem_address.clone();
-        let refund_address = bob_btc_wallet.new_address().await.unwrap();
-
-        let refund_timelock = 1;
-        let punish_timelock = 1;
+        let refund_address = bob.bitcoin_wallet.new_address().await.unwrap();
 
         let alice_state0 = alice::State0::new(
             &mut OsRng,
             btc_amount,
             xmr_amount,
-            refund_timelock,
-            punish_timelock,
+            RELATIVE_REFUND_TIMELOCK,
+            RELATIVE_PUNISH_TIMELOCK,
             redeem_address.clone(),
             punish_address.clone(),
         );
@@ -134,25 +149,47 @@ mod tests {
             &mut OsRng,
             btc_amount,
             xmr_amount,
-            refund_timelock,
-            punish_timelock,
+            RELATIVE_REFUND_TIMELOCK,
+            RELATIVE_PUNISH_TIMELOCK,
             refund_address.clone(),
         );
+        let initial_balances = InitialBalances {
+            alice_xmr: alice_initial_xmr_balance,
+            alice_btc: alice_initial_btc_balance,
+            bob_xmr: bob_initial_xmr_balance,
+            bob_btc: bob_initial_btc_balance,
+        };
+        (
+            alice_state0,
+            bob_state0,
+            alice,
+            bob,
+            initial_balances,
+            swap_amounts,
+        )
+    }
 
-        let (mut alice_transport, mut bob_transport) = new_alice_and_bob();
+    #[tokio::test]
+    async fn happy_path_async() {
+        let _guard = tracing_subscriber::fmt()
+            .with_env_filter("info")
+            .set_default();
 
-        let mut alice =
-            alice::node::Node::new(alice_transport, alice_btc_wallet, alice_monero_wallet);
+        let (alice_state0, bob_state0, mut alice, mut bob, initial_balances, swap_amounts) =
+            init_test().await;
 
-        let mut bob = bob::node::Node::new(bob_transport, bob_btc_wallet, bob_monero_wallet);
-        let mut rng1 = OsRng;
-        let mut rng2 = OsRng;
+        let (alice_state, bob_state) = future::try_join(
+            run_alice_until(
+                &mut alice,
+                alice_state0.into(),
+                alice::is_state5,
+                &mut OsRng,
+            ),
+            run_bob_until(&mut bob, bob_state0.into(), bob::is_state4, &mut OsRng),
+        )
+        .await
+        .unwrap();
 
-        let alice_fut =
-            run_alice_until(&mut alice, alice_state0.into(), alice::is_state5, &mut rng1);
-        let bob_fut = run_bob_until(&mut bob, bob_state0.into(), bob::is_state4, &mut rng2);
-
-        let (alice_state, bob_state) = future::try_join(alice_fut, bob_fut).await.unwrap();
         let alice_state5: alice::State5 = alice_state.try_into().unwrap();
         let bob_state4: bob::State4 = bob_state.try_into().unwrap();
 
@@ -167,11 +204,12 @@ mod tests {
 
         assert_eq!(
             alice_final_btc_balance,
-            alice_initial_btc_balance + btc_amount - bitcoin::Amount::from_sat(bitcoin::TX_FEE)
+            initial_balances.alice_btc + swap_amounts.btc
+                - bitcoin::Amount::from_sat(bitcoin::TX_FEE)
         );
         assert_eq!(
             bob_final_btc_balance,
-            bob_initial_btc_balance - btc_amount - lock_tx_bitcoin_fee
+            initial_balances.bob_btc - swap_amounts.btc - lock_tx_bitcoin_fee
         );
 
         let alice_final_xmr_balance = alice.monero_wallet.0.get_balance_alice().await.unwrap();
@@ -184,13 +222,13 @@ mod tests {
 
         assert_eq!(
             alice_final_xmr_balance,
-            alice_initial_xmr_balance
-                - u64::from(xmr_amount)
+            initial_balances.alice_xmr
+                - u64::from(swap_amounts.xmr)
                 - u64::from(alice_state5.lock_xmr_fee())
         );
         assert_eq!(
             bob_final_xmr_balance,
-            bob_initial_xmr_balance + u64::from(xmr_amount)
+            initial_balances.bob_xmr + u64::from(swap_amounts.xmr)
         );
     }
 

@@ -1,16 +1,14 @@
 use crate::{
     alice, bitcoin,
     bitcoin::{BroadcastSignedTransaction, BuildTxLockPsbt, SignTxLock},
-    bob,
-    bob::State,
-    monero,
+    bob, monero,
     transport::SendReceive,
     Transport,
 };
 use anyhow::Result;
-use genawaiter::{sync::Gen, GeneratorState};
+
 use rand::{CryptoRng, RngCore};
-use std::{convert::TryInto, future::Future};
+use std::convert::TryInto;
 
 // This struct is responsible for I/O
 pub struct Node<B, M>

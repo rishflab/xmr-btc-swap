@@ -1,12 +1,10 @@
 use crate::{alice, bitcoin, bob, monero, Transport};
 use anyhow::Result;
-use genawaiter::sync::Gen;
-use std::{convert::TryInto, future::Future};
+use std::convert::TryInto;
 
-use genawaiter::GeneratorState;
 use rand::{CryptoRng, RngCore};
 
-use crate::{alice::State, bitcoin::BroadcastSignedTransaction, transport::SendReceive};
+use crate::{bitcoin::BroadcastSignedTransaction, transport::SendReceive};
 
 // This struct is responsible for I/O
 pub struct Node<B, M>
@@ -95,7 +93,7 @@ async fn next_state<
             tokio::time::delay_for(std::time::Duration::new(5, 0)).await;
             Ok(state3.into())
         }
-        alice::State::State3((state3)) => {
+        alice::State::State3(state3) => {
             tracing::info!("alice is watching for locked btc");
             let state4 = state3.watch_for_lock_btc(&alice.bitcoin_wallet).await?;
             Ok(state4.into())
