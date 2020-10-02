@@ -14,44 +14,17 @@
 #![forbid(unsafe_code)]
 #![allow(non_snake_case)]
 
-use crate::transport::Transport;
-use tokio::sync::{
-    mpsc,
-    mpsc::{Receiver, Sender},
-};
-
 pub mod alice;
 pub mod bitcoin;
 pub mod bob;
 pub mod monero;
 mod transport;
 
-pub fn new_alice_and_bob() -> (
-    Transport<alice::Message, bob::Message>,
-    Transport<bob::Message, alice::Message>,
-) {
-    let (a_sender, b_receiver): (Sender<alice::Message>, Receiver<alice::Message>) =
-        mpsc::channel(5);
-    let (b_sender, a_receiver): (Sender<bob::Message>, Receiver<bob::Message>) = mpsc::channel(5);
-
-    let a_transport = Transport {
-        sender: a_sender,
-        receiver: a_receiver,
-    };
-
-    let b_transport = Transport {
-        sender: b_sender,
-        receiver: b_receiver,
-    };
-
-    (a_transport, b_transport)
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
         alice, alice::node::run_alice_until, bitcoin, bob, bob::node::run_bob_until, monero,
-        new_alice_and_bob,
+        transport::Transport,
     };
     use bitcoin_harness::Bitcoind;
     use futures::future;
@@ -59,6 +32,10 @@ mod tests {
     use rand::rngs::OsRng;
     use std::convert::TryInto;
     use testcontainers::clients::Cli;
+    use tokio::sync::{
+        mpsc,
+        mpsc::{Receiver, Sender},
+    };
     use tracing_subscriber::util::SubscriberInitExt;
 
     const TEN_XMR: u64 = 10_000_000_000_000;
@@ -84,18 +61,39 @@ mod tests {
         btc: bitcoin::Amount,
     }
 
-    pub async fn init_test<Ba, Ma, Bb, Mb>() -> (
+    pub fn new_alice_and_bob() -> (
+        Transport<alice::Message, bob::Message>,
+        Transport<bob::Message, alice::Message>,
+    ) {
+        let (a_sender, b_receiver): (Sender<alice::Message>, Receiver<alice::Message>) =
+            mpsc::channel(5);
+        let (b_sender, a_receiver): (Sender<bob::Message>, Receiver<bob::Message>) =
+            mpsc::channel(5);
+
+        let a_transport = Transport {
+            sender: a_sender,
+            receiver: a_receiver,
+        };
+
+        let b_transport = Transport {
+            sender: b_sender,
+            receiver: b_receiver,
+        };
+
+        (a_transport, b_transport)
+    }
+
+    pub async fn init_test<'a>(
+        monero: &'a Monero<'a>,
+        bitcoind: &Bitcoind<'_>,
+    ) -> (
         alice::State0,
         bob::State0,
-        alice::node::Node<Ba, Ma>,
-        bob::node::Node<Bb, Mb>,
+        alice::node::Node<'a>,
+        bob::node::Node<'a>,
         InitialBalances,
         SwapAmounts,
     ) {
-        let cli = Cli::default();
-        let monero = Monero::new(&cli);
-        let bitcoind = init_bitcoind(&cli).await;
-
         // must be bigger than our hardcoded fee of 10_000
         let btc_amount = bitcoin::Amount::from_sat(10_000_000);
         let xmr_amount = monero::Amount::from_piconero(1_000_000_000_000);
@@ -121,10 +119,9 @@ mod tests {
 
         let (mut alice_transport, mut bob_transport) = new_alice_and_bob();
 
-        let mut alice =
-            alice::node::Node::new(alice_transport, alice_btc_wallet, alice_monero_wallet);
+        let alice = alice::node::Node::new(alice_transport, alice_btc_wallet, alice_monero_wallet);
 
-        let mut bob = bob::node::Node::new(bob_transport, bob_btc_wallet, bob_monero_wallet);
+        let bob = bob::node::Node::new(bob_transport, bob_btc_wallet, bob_monero_wallet);
 
         let alice_initial_btc_balance = alice.bitcoin_wallet.balance().await.unwrap();
         let bob_initial_btc_balance = bob.bitcoin_wallet.balance().await.unwrap();
@@ -170,22 +167,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn happy_path_async() {
+    async fn happy_path() {
         let _guard = tracing_subscriber::fmt()
             .with_env_filter("info")
             .set_default();
 
-        let (alice_state0, bob_state0, mut alice, mut bob, initial_balances, swap_amounts) =
-            init_test().await;
+        let cli = Cli::default();
+        let monero = Monero::new(&cli);
+        let bitcoind = init_bitcoind(&cli).await;
+
+        let (
+            alice_state0,
+            bob_state0,
+            mut alice_node,
+            mut bob_node,
+            initial_balances,
+            swap_amounts,
+        ) = init_test(&monero, &bitcoind).await;
 
         let (alice_state, bob_state) = future::try_join(
             run_alice_until(
-                &mut alice,
+                &mut alice_node,
                 alice_state0.into(),
                 alice::is_state5,
                 &mut OsRng,
             ),
-            run_bob_until(&mut bob, bob_state0.into(), bob::is_state4, &mut OsRng),
+            run_bob_until(&mut bob_node, bob_state0.into(), bob::is_state4, &mut OsRng),
         )
         .await
         .unwrap();
@@ -193,10 +200,10 @@ mod tests {
         let alice_state5: alice::State5 = alice_state.try_into().unwrap();
         let bob_state4: bob::State4 = bob_state.try_into().unwrap();
 
-        let alice_final_btc_balance = alice.bitcoin_wallet.balance().await.unwrap();
-        let bob_final_btc_balance = bob.bitcoin_wallet.balance().await.unwrap();
+        let alice_final_btc_balance = alice_node.bitcoin_wallet.balance().await.unwrap();
+        let bob_final_btc_balance = bob_node.bitcoin_wallet.balance().await.unwrap();
 
-        let lock_tx_bitcoin_fee = bob
+        let lock_tx_bitcoin_fee = bob_node
             .bitcoin_wallet
             .transaction_fee(bob_state4.tx_lock_id())
             .await
@@ -212,13 +219,21 @@ mod tests {
             initial_balances.bob_btc - swap_amounts.btc - lock_tx_bitcoin_fee
         );
 
-        let alice_final_xmr_balance = alice.monero_wallet.0.get_balance_alice().await.unwrap();
-        bob.monero_wallet
+        let alice_final_xmr_balance = alice_node
+            .monero_wallet
+            .0
+            .get_balance_alice()
+            .await
+            .unwrap();
+
+        bob_node
+            .monero_wallet
             .0
             .wait_for_bob_wallet_block_height()
             .await
             .unwrap();
-        let bob_final_xmr_balance = bob.monero_wallet.0.get_balance_bob().await.unwrap();
+
+        let bob_final_xmr_balance = bob_node.monero_wallet.0.get_balance_bob().await.unwrap();
 
         assert_eq!(
             alice_final_xmr_balance,

@@ -1,32 +1,28 @@
-use crate::{alice, bitcoin, bob, monero, Transport};
+use crate::{alice, bitcoin, bob, monero};
 use anyhow::Result;
 use std::convert::TryInto;
 
 use rand::{CryptoRng, RngCore};
 
-use crate::{bitcoin::BroadcastSignedTransaction, transport::SendReceive};
+use crate::{
+    bitcoin::{BroadcastSignedTransaction, GetRawTransaction},
+    monero::Transfer,
+    transport::{SendReceive, Transport},
+};
 
 // This struct is responsible for I/O
-pub struct Node<B, M>
-where
-    B: bitcoin::GetRawTransaction + BroadcastSignedTransaction,
-    M: monero::Transfer,
-{
+pub struct Node<'a> {
     transport: Transport<alice::Message, bob::Message>,
-    pub bitcoin_wallet: B,
-    pub monero_wallet: M,
+    pub bitcoin_wallet: crate::bitcoin::Wallet,
+    pub monero_wallet: crate::monero::AliceWallet<'a>,
 }
 
-impl<B, M> Node<B, M>
-where
-    B: bitcoin::GetRawTransaction + BroadcastSignedTransaction,
-    M: monero::Transfer,
-{
+impl<'a> Node<'a> {
     pub fn new(
         transport: Transport<alice::Message, bob::Message>,
-        bitcoin_wallet: B,
-        monero_wallet: M,
-    ) -> Node<B, M> {
+        bitcoin_wallet: crate::bitcoin::Wallet,
+        monero_wallet: crate::monero::AliceWallet<'a>,
+    ) -> Node<'a> {
         Self {
             transport,
             bitcoin_wallet,
@@ -35,16 +31,11 @@ where
     }
 }
 
-pub async fn run_alice_until<
-    'a,
-    R: RngCore + CryptoRng,
-    B: bitcoin::GetRawTransaction + BroadcastSignedTransaction,
-    M: monero::Transfer,
->(
-    alice: &'a mut Node<B, M>,
+pub async fn run_alice_until<'a, R: RngCore + CryptoRng>(
+    alice: &mut Node<'a>,
     initial_state: alice::State,
     is_state: fn(&alice::State) -> bool,
-    rng: &'a mut R,
+    rng: &mut R,
 ) -> Result<alice::State> {
     let mut result = initial_state;
     loop {
@@ -55,15 +46,10 @@ pub async fn run_alice_until<
     }
 }
 
-async fn next_state<
-    'a,
-    R: RngCore + CryptoRng,
-    B: bitcoin::GetRawTransaction + BroadcastSignedTransaction,
-    M: monero::Transfer,
->(
-    alice: &'a mut Node<B, M>,
+async fn next_state<'a, R: RngCore + CryptoRng>(
+    alice: &mut Node<'a>,
     state: alice::State,
-    rng: &'a mut R,
+    rng: &mut R,
 ) -> Result<alice::State> {
     match state {
         alice::State::State0(state0) => {

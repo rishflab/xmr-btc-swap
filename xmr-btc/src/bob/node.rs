@@ -3,34 +3,26 @@ use crate::{
     bitcoin::{BroadcastSignedTransaction, BuildTxLockPsbt, SignTxLock},
     bob, monero,
     transport::SendReceive,
-    Transport,
 };
 use anyhow::Result;
 
+use crate::transport::Transport;
 use rand::{CryptoRng, RngCore};
 use std::convert::TryInto;
 
 // This struct is responsible for I/O
-pub struct Node<B, M>
-where
-    B: bitcoin::GetRawTransaction + BroadcastSignedTransaction + BuildTxLockPsbt + SignTxLock,
-    M: monero::CheckTransfer + monero::ImportOutput,
-{
+pub struct Node<'a> {
     transport: Transport<bob::Message, alice::Message>,
-    pub bitcoin_wallet: B,
-    pub monero_wallet: M,
+    pub bitcoin_wallet: crate::bitcoin::Wallet,
+    pub monero_wallet: crate::monero::BobWallet<'a>,
 }
 
-impl<B, M> Node<B, M>
-where
-    B: bitcoin::GetRawTransaction + BroadcastSignedTransaction + BuildTxLockPsbt + SignTxLock,
-    M: monero::CheckTransfer + monero::ImportOutput,
-{
+impl<'a> Node<'a> {
     pub fn new(
         transport: Transport<bob::Message, alice::Message>,
-        bitcoin_wallet: B,
-        monero_wallet: M,
-    ) -> Node<B, M> {
+        bitcoin_wallet: crate::bitcoin::Wallet,
+        monero_wallet: crate::monero::BobWallet<'a>,
+    ) -> Node<'a> {
         Self {
             transport,
             bitcoin_wallet,
@@ -39,16 +31,11 @@ where
     }
 }
 
-pub async fn run_bob_until<
-    'a,
-    R: RngCore + CryptoRng,
-    B: bitcoin::GetRawTransaction + BroadcastSignedTransaction + BuildTxLockPsbt + SignTxLock,
-    M: monero::CheckTransfer + monero::ImportOutput,
->(
-    bob: &'a mut Node<B, M>,
+pub async fn run_bob_until<'a, R: RngCore + CryptoRng>(
+    bob: &mut Node<'a>,
     initial_state: bob::State,
     is_state: fn(&bob::State) -> bool,
-    rng: &'a mut R,
+    rng: &mut R,
 ) -> Result<bob::State> {
     let mut result = initial_state;
     loop {
@@ -59,15 +46,10 @@ pub async fn run_bob_until<
     }
 }
 
-async fn next_state<
-    'a,
-    R: RngCore + CryptoRng,
-    B: bitcoin::GetRawTransaction + BroadcastSignedTransaction + BuildTxLockPsbt + SignTxLock,
-    M: monero::CheckTransfer + monero::ImportOutput,
->(
-    node: &'a mut Node<B, M>,
+async fn next_state<'a, R: RngCore + CryptoRng>(
+    node: &mut Node<'a>,
     state: bob::State,
-    rng: &'a mut R,
+    rng: &mut R,
 ) -> Result<bob::State> {
     match state {
         bob::State::State0(state0) => {
