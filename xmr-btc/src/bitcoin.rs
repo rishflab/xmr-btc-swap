@@ -28,6 +28,7 @@ pub use crate::bitcoin::transactions::{TxCancel, TxLock, TxPunish, TxRedeem, TxR
 pub use bitcoin::{Address, Amount, OutPoint, Txid};
 pub use ecdsa_fun::{adaptor::EncryptedSignature, Signature};
 
+use bitcoin::hashes::core::time::Duration;
 #[cfg(test)]
 pub use wallet::{make_wallet, Wallet};
 
