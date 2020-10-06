@@ -1,27 +1,25 @@
-use crate::{alice, bitcoin, bob, monero};
-use anyhow::Result;
-use std::convert::TryInto;
-
-use rand::{CryptoRng, RngCore};
-
 use crate::{
-    bitcoin::{BroadcastSignedTransaction, GetRawTransaction},
-    monero::Transfer,
     transport::{SendReceive, Transport},
+    wallet,
 };
+use anyhow::Result;
+use rand::{CryptoRng, RngCore};
+use std::convert::TryInto;
+use xmr_btc::{alice, bob};
 
+// TODO: merge this with bob node
 // This struct is responsible for I/O
 pub struct Node<'a> {
     transport: Transport<alice::Message, bob::Message>,
-    pub bitcoin_wallet: crate::bitcoin::Wallet,
-    pub monero_wallet: crate::monero::AliceWallet<'a>,
+    pub bitcoin_wallet: wallet::bitcoin::Wallet,
+    pub monero_wallet: wallet::monero::AliceWallet<'a>,
 }
 
 impl<'a> Node<'a> {
     pub fn new(
         transport: Transport<alice::Message, bob::Message>,
-        bitcoin_wallet: crate::bitcoin::Wallet,
-        monero_wallet: crate::monero::AliceWallet<'a>,
+        bitcoin_wallet: wallet::bitcoin::Wallet,
+        monero_wallet: wallet::monero::AliceWallet<'a>,
     ) -> Node<'a> {
         Self {
             transport,
@@ -46,6 +44,7 @@ pub async fn run_alice_until<'a, R: RngCore + CryptoRng>(
     }
 }
 
+// TODO: move this into the lib
 async fn next_state<'a, R: RngCore + CryptoRng>(
     alice: &mut Node<'a>,
     state: alice::State,
@@ -85,25 +84,25 @@ async fn next_state<'a, R: RngCore + CryptoRng>(
             Ok(state4.into())
         }
         alice::State::State4(state4) => {
-            let state4b = state4.lock_xmr(&alice.monero_wallet).await?;
+            let state5 = state4.lock_xmr(&alice.monero_wallet).await?;
             tracing::info!("alice has locked xmr");
-            Ok(state4b.into())
+            Ok(state5.into())
         }
-        alice::State::State4b(state4b) => {
+        alice::State::State5(state5) => {
             alice
                 .transport
                 .sender
-                .send(state4b.next_message().into())
+                .send(state5.next_message().into())
                 .await?;
             // todo: pass in state4b as a parameter somewhere in this call to prevent the
             // user from waiting for a message that wont be sent
             let message3: bob::Message3 = alice.transport.receive_message().await?.try_into()?;
-            let state5 = state4b.receive(message3);
+            let state6 = state5.receive(message3);
             tracing::info!("alice has received bob message 3");
             tracing::info!("alice is redeeming btc");
-            state5.redeem_btc(&alice.bitcoin_wallet).await.unwrap();
-            Ok(state5.into())
+            state6.redeem_btc(&alice.bitcoin_wallet).await.unwrap();
+            Ok(state6.into())
         }
-        alice::State::State5(state5) => Ok(state5.into()),
+        alice::State::State6(state6) => Ok(state6.into()),
     }
 }

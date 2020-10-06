@@ -1,4 +1,3 @@
-use crate::{alice, bob};
 use anyhow::{anyhow, Result};
 
 use async_trait::async_trait;
@@ -6,6 +5,7 @@ use tokio::{
     stream::StreamExt,
     sync::mpsc::{Receiver, Sender},
 };
+use xmr_btc::{alice, bob};
 
 #[derive(Debug)]
 pub struct Transport<SendMsg, RecvMsg> {

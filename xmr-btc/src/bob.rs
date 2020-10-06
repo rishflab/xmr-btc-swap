@@ -1,5 +1,3 @@
-pub mod node;
-
 use crate::{
     alice,
     bitcoin::{self, BuildTxLockPsbt, GetRawTransaction, TxCancel},
@@ -20,9 +18,9 @@ pub enum State {
     State0(State0),
     State1(State1),
     State2(State2),
-    State2b(State2b),
     State3(State3),
     State4(State4),
+    State5(State5),
 }
 
 macro_rules! impl_try_from_parent_state {
@@ -43,9 +41,9 @@ macro_rules! impl_try_from_parent_state {
 impl_try_from_parent_state!(State0);
 impl_try_from_parent_state!(State1);
 impl_try_from_parent_state!(State2);
-impl_try_from_parent_state!(State2b);
 impl_try_from_parent_state!(State3);
 impl_try_from_parent_state!(State4);
+impl_try_from_parent_state!(State5);
 
 macro_rules! impl_from_child_state {
     ($type:ident) => {
@@ -60,21 +58,22 @@ macro_rules! impl_from_child_state {
 impl_from_child_state!(State0);
 impl_from_child_state!(State1);
 impl_from_child_state!(State2);
-impl_from_child_state!(State2b);
 impl_from_child_state!(State3);
 impl_from_child_state!(State4);
+impl_from_child_state!(State5);
 
-// todo: use macro
-pub fn is_state4(state: &State) -> bool {
+// TODO: use macro or generics
+pub fn is_state5(state: &State) -> bool {
     match state {
-        State::State4 { .. } => true,
+        State::State5 { .. } => true,
         _ => false,
     }
 }
 
-pub fn is_state2b(state: &State) -> bool {
+// TODO: use macro or generics
+pub fn is_state3(state: &State) -> bool {
     match state {
-        State::State2b { .. } => true,
+        State::State3 { .. } => true,
         _ => false,
     }
 }
@@ -401,7 +400,7 @@ impl State2 {
         }
     }
 
-    pub async fn lock_btc<W>(self, bitcoin_wallet: &W) -> Result<State2b>
+    pub async fn lock_btc<W>(self, bitcoin_wallet: &W) -> Result<State3>
     where
         W: bitcoin::SignTxLock + bitcoin::BroadcastSignedTransaction,
     {
@@ -412,7 +411,7 @@ impl State2 {
             .broadcast_signed_transaction(signed_tx_lock)
             .await?;
 
-        Ok(State2b {
+        Ok(State3 {
             A: self.A,
             b: self.b,
             s_b: self.s_b,
@@ -434,7 +433,7 @@ impl State2 {
 }
 
 #[derive(Debug, Clone)]
-pub struct State2b {
+pub struct State3 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
     s_b: cross_curve_dleq::Scalar,
@@ -453,9 +452,9 @@ pub struct State2b {
     tx_refund_encsig: EncryptedSignature,
 }
 
-impl State2b {
+impl State3 {
     // todo: loop until punish? timelock has expired
-    pub async fn watch_for_lock_xmr<W>(self, xmr_wallet: &W, msg: alice::Message2) -> Result<State3>
+    pub async fn watch_for_lock_xmr<W>(self, xmr_wallet: &W, msg: alice::Message2) -> Result<State4>
     where
         W: monero::CheckTransfer,
     {
@@ -468,7 +467,7 @@ impl State2b {
             .check_transfer(S, self.v.public(), msg.tx_lock_proof, self.xmr)
             .await?;
 
-        Ok(State3 {
+        Ok(State4 {
             A: self.A,
             b: self.b,
             s_b: self.s_b,
@@ -534,14 +533,13 @@ impl State2b {
         }
         Ok(())
     }
-    #[cfg(test)]
     pub fn tx_lock_id(&self) -> bitcoin::Txid {
         self.tx_lock.txid()
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct State3 {
+pub struct State4 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
     s_b: cross_curve_dleq::Scalar,
@@ -560,7 +558,7 @@ pub struct State3 {
     tx_refund_encsig: EncryptedSignature,
 }
 
-impl State3 {
+impl State4 {
     pub fn next_message(&self) -> Message3 {
         let tx_redeem = bitcoin::TxRedeem::new(&self.tx_lock, &self.redeem_address);
         let tx_redeem_encsig = self.b.encsign(self.S_a_bitcoin.clone(), tx_redeem.digest());
@@ -568,7 +566,7 @@ impl State3 {
         Message3 { tx_redeem_encsig }
     }
 
-    pub async fn watch_for_redeem_btc<W>(self, bitcoin_wallet: &W) -> Result<State4>
+    pub async fn watch_for_redeem_btc<W>(self, bitcoin_wallet: &W) -> Result<State5>
     where
         W: GetRawTransaction,
     {
@@ -583,7 +581,7 @@ impl State3 {
         let s_a =
             monero::PrivateKey::from_scalar(monero::Scalar::from_bytes_mod_order(s_a.to_bytes()));
 
-        Ok(State4 {
+        Ok(State5 {
             A: self.A,
             b: self.b,
             s_a,
@@ -606,7 +604,7 @@ impl State3 {
 }
 
 #[derive(Debug, Clone)]
-pub struct State4 {
+pub struct State5 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
     s_a: monero::PrivateKey,
@@ -626,7 +624,7 @@ pub struct State4 {
     tx_cancel_sig: Signature,
 }
 
-impl State4 {
+impl State5 {
     pub async fn claim_xmr<W>(&self, monero_wallet: &W) -> Result<()>
     where
         W: monero::ImportOutput,
@@ -643,7 +641,6 @@ impl State4 {
 
         Ok(())
     }
-    #[cfg(test)]
     pub fn tx_lock_id(&self) -> bitcoin::Txid {
         self.tx_lock.txid()
     }

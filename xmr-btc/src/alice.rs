@@ -1,5 +1,3 @@
-pub mod node;
-
 use anyhow::{anyhow, Result};
 use ecdsa_fun::adaptor::{Adaptor, EncryptedSignature};
 use rand::{CryptoRng, RngCore};
@@ -16,32 +14,28 @@ pub enum State {
     State2(State2),
     State3(State3),
     State4(State4),
-    State4b(State4b),
     State5(State5),
+    State6(State6),
 }
 
-// todo: use macro
-pub fn is_state0(state: &State) -> bool {
-    match state {
-        State::State0 { .. } => true,
-        _ => false,
-    }
-}
+// TODO: use macro or generics
 pub fn is_state4(state: &State) -> bool {
     match state {
         State::State4 { .. } => true,
         _ => false,
     }
 }
-pub fn is_state4b(state: &State) -> bool {
-    match state {
-        State::State4b { .. } => true,
-        _ => false,
-    }
-}
+// TODO: use macro or generics
 pub fn is_state5(state: &State) -> bool {
     match state {
         State::State5 { .. } => true,
+        _ => false,
+    }
+}
+// TODO: use macro or generics
+pub fn is_state6(state: &State) -> bool {
+    match state {
+        State::State6 { .. } => true,
         _ => false,
     }
 }
@@ -66,8 +60,8 @@ impl_try_from_parent_state!(State1);
 impl_try_from_parent_state!(State2);
 impl_try_from_parent_state!(State3);
 impl_try_from_parent_state!(State4);
-impl_try_from_parent_state!(State4b);
 impl_try_from_parent_state!(State5);
+impl_try_from_parent_state!(State6);
 
 macro_rules! impl_from_child_state {
     ($type:ident) => {
@@ -84,8 +78,8 @@ impl_from_child_state!(State1);
 impl_from_child_state!(State2);
 impl_from_child_state!(State3);
 impl_from_child_state!(State4);
-impl_from_child_state!(State4b);
 impl_from_child_state!(State5);
+impl_from_child_state!(State6);
 
 #[derive(Debug)]
 pub enum Message {
@@ -127,7 +121,7 @@ impl TryFrom<Message> for Message1 {
         match m {
             Message::Message1(m) => Ok(m),
             _ => Err(UnexpectedMessage {
-                expected_type: "Create0".to_string(),
+                expected_type: "Create1".to_string(),
                 received: m,
             }),
         }
@@ -147,7 +141,7 @@ impl TryFrom<Message> for Message2 {
         match m {
             Message::Message2(m) => Ok(m),
             _ => Err(UnexpectedMessage {
-                expected_type: "Create0".to_string(),
+                expected_type: "Create2".to_string(),
                 received: m,
             }),
         }
@@ -489,7 +483,7 @@ pub struct State4 {
 }
 
 impl State4 {
-    pub async fn lock_xmr<W>(self, monero_wallet: &W) -> Result<State4b>
+    pub async fn lock_xmr<W>(self, monero_wallet: &W) -> Result<State5>
     where
         W: monero::Transfer,
     {
@@ -502,7 +496,7 @@ impl State4 {
             .transfer(S_a + S_b, self.v.public(), self.xmr)
             .await?;
 
-        Ok(State4b {
+        Ok(State5 {
             a: self.a,
             B: self.B,
             s_a: self.s_a,
@@ -572,7 +566,7 @@ impl State4 {
 }
 
 #[derive(Debug, Clone)]
-pub struct State4b {
+pub struct State5 {
     a: bitcoin::SecretKey,
     B: bitcoin::PublicKey,
     s_a: cross_curve_dleq::Scalar,
@@ -593,15 +587,15 @@ pub struct State4b {
     lock_xmr_fee: monero::Amount,
 }
 
-impl State4b {
+impl State5 {
     pub fn next_message(&self) -> Message2 {
         Message2 {
             tx_lock_proof: self.tx_lock_proof.clone(),
         }
     }
 
-    pub fn receive(self, msg: bob::Message3) -> State5 {
-        State5 {
+    pub fn receive(self, msg: bob::Message3) -> State6 {
+        State6 {
             a: self.a,
             B: self.B,
             s_a: self.s_a,
@@ -661,7 +655,7 @@ impl State4b {
 }
 
 #[derive(Debug, Clone)]
-pub struct State5 {
+pub struct State6 {
     a: bitcoin::SecretKey,
     B: bitcoin::PublicKey,
     s_a: cross_curve_dleq::Scalar,
@@ -681,7 +675,7 @@ pub struct State5 {
     lock_xmr_fee: monero::Amount,
 }
 
-impl State5 {
+impl State6 {
     pub async fn redeem_btc<W: bitcoin::BroadcastSignedTransaction>(
         &self,
         bitcoin_wallet: &W,

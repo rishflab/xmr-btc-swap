@@ -1,6 +1,3 @@
-#[cfg(test)]
-pub mod wallet;
-
 use std::ops::Add;
 
 use anyhow::Result;
@@ -69,6 +66,9 @@ impl Amount {
     pub fn from_piconero(amount: u64) -> Self {
         Amount(amount)
     }
+    pub fn as_piconero(&self) -> u64 {
+        self.0
+    }
 }
 
 impl From<Amount> for u64 {
@@ -83,8 +83,21 @@ pub struct TransferProof {
     tx_key: PrivateKey,
 }
 
+impl TransferProof {
+    pub fn new(tx_hash: TxHash, tx_key: PrivateKey) -> Self {
+        Self { tx_hash, tx_key }
+    }
+    pub fn tx_hash(&self) -> TxHash {
+        self.tx_hash.clone()
+    }
+    pub fn tx_key(&self) -> PrivateKey {
+        self.tx_key
+    }
+}
+
+// TODO: add constructor/ change String to fixed length byte array
 #[derive(Clone, Debug)]
-pub struct TxHash(String);
+pub struct TxHash(pub String);
 
 impl From<TxHash> for String {
     fn from(from: TxHash) -> Self {

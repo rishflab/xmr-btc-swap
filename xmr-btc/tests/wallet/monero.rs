@@ -1,12 +1,12 @@
-use crate::monero::{
-    Amount, CheckTransfer, ImportOutput, PrivateViewKey, PublicKey, PublicViewKey, Transfer,
-    TransferProof, TxHash,
-};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use monero::{Address, Network, PrivateKey};
 use monero_harness::Monero;
 use std::str::FromStr;
+use xmr_btc::monero::{
+    Amount, CheckTransfer, ImportOutput, PrivateViewKey, PublicKey, PublicViewKey, Transfer,
+    TransferProof, TxHash,
+};
 
 #[derive(Debug)]
 pub struct AliceWallet<'c>(pub &'c Monero<'c>);
@@ -24,7 +24,7 @@ impl Transfer for AliceWallet<'_> {
 
         let res = self
             .0
-            .transfer_from_alice(amount.0, &destination_address.to_string())
+            .transfer_from_alice(amount.as_piconero(), &destination_address.to_string())
             .await?;
 
         let tx_hash = TxHash(res.tx_hash);
@@ -32,7 +32,7 @@ impl Transfer for AliceWallet<'_> {
 
         let fee = Amount::from_piconero(res.fee);
 
-        Ok((TransferProof { tx_hash, tx_key }, fee))
+        Ok((TransferProof::new(tx_hash, tx_key), fee))
     }
 }
 
@@ -54,8 +54,8 @@ impl CheckTransfer for BobWallet<'_> {
 
         let res = cli
             .check_tx_key(
-                &String::from(transfer_proof.tx_hash),
-                &transfer_proof.tx_key.to_string(),
+                &String::from(transfer_proof.tx_hash()),
+                &transfer_proof.tx_key().to_string(),
                 &address.to_string(),
             )
             .await?;
