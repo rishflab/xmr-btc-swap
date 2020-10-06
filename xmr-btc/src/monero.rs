@@ -13,9 +13,6 @@ pub fn random_private_key<R: RngCore + CryptoRng>(rng: &mut R) -> PrivateKey {
     PrivateKey::from_scalar(scalar)
 }
 
-#[cfg(test)]
-pub use wallet::{AliceWallet, BobWallet};
-
 #[derive(Clone, Copy, Debug)]
 pub struct PrivateViewKey(PrivateKey);
 

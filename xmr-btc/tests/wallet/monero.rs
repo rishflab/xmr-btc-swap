@@ -36,6 +36,32 @@ impl Transfer for AliceWallet<'_> {
     }
 }
 
+#[async_trait]
+impl ImportOutput for AliceWallet<'_> {
+    async fn import_output(
+        &self,
+        private_spend_key: PrivateKey,
+        private_view_key: PrivateViewKey,
+    ) -> Result<()> {
+        let public_spend_key = PublicKey::from_private_key(&private_spend_key);
+        let public_view_key = PublicKey::from_private_key(&private_view_key.into());
+
+        let address = Address::standard(Network::Mainnet, public_spend_key, public_view_key);
+
+        let _ = self
+            .0
+            .alice_wallet_rpc_client()
+            .generate_from_keys(
+                &address.to_string(),
+                &private_spend_key.to_string(),
+                &PrivateKey::from(private_view_key).to_string(),
+            )
+            .await?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct BobWallet<'c>(pub &'c Monero<'c>);
 
@@ -87,32 +113,6 @@ impl ImportOutput for BobWallet<'_> {
         let _ = self
             .0
             .bob_wallet_rpc_client()
-            .generate_from_keys(
-                &address.to_string(),
-                &private_spend_key.to_string(),
-                &PrivateKey::from(private_view_key).to_string(),
-            )
-            .await?;
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl ImportOutput for AliceWallet<'_> {
-    async fn import_output(
-        &self,
-        private_spend_key: PrivateKey,
-        private_view_key: PrivateViewKey,
-    ) -> Result<()> {
-        let public_spend_key = PublicKey::from_private_key(&private_spend_key);
-        let public_view_key = PublicKey::from_private_key(&private_view_key.into());
-
-        let address = Address::standard(Network::Mainnet, public_spend_key, public_view_key);
-
-        let _ = self
-            .0
-            .alice_wallet_rpc_client()
             .generate_from_keys(
                 &address.to_string(),
                 &private_spend_key.to_string(),

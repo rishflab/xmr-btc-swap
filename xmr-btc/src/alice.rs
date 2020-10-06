@@ -2,10 +2,77 @@ use anyhow::{anyhow, Result};
 use ecdsa_fun::adaptor::{Adaptor, EncryptedSignature};
 use rand::{CryptoRng, RngCore};
 
-use crate::{bitcoin, bitcoin::GetRawTransaction, bob, monero, monero::ImportOutput};
+use crate::{
+    bitcoin,
+    bitcoin::{BroadcastSignedTransaction, GetRawTransaction},
+    bob, monero,
+    monero::{ImportOutput, Transfer},
+    transport::SendReceive,
+};
 use ecdsa_fun::{nonce::Deterministic, Signature};
 use sha2::Sha256;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
+
+pub async fn next_state<
+    'a,
+    R: RngCore + CryptoRng,
+    B: GetRawTransaction + BroadcastSignedTransaction,
+    M: ImportOutput + Transfer,
+    T: SendReceive<Message, bob::Message>,
+>(
+    bitcoin_wallet: &B,
+    monero_wallet: &M,
+    transport: &mut T,
+    state: State,
+    rng: &mut R,
+) -> Result<State> {
+    match state {
+        State::State0(state0) => {
+            transport
+                .send_message(state0.next_message(rng).into())
+                .await?;
+
+            let bob_message0: bob::Message0 = transport.receive_message().await?.try_into()?;
+            let state1 = state0.receive(bob_message0)?;
+            Ok(state1.into())
+        }
+        State::State1(state1) => {
+            let bob_message1: bob::Message1 = transport.receive_message().await?.try_into()?;
+            let state2 = state1.receive(bob_message1);
+            let alice_message1: Message1 = state2.next_message();
+            transport.send_message(alice_message1.into()).await?;
+            Ok(state2.into())
+        }
+        State::State2(state2) => {
+            let bob_message2: bob::Message2 = transport.receive_message().await?.try_into()?;
+            let state3 = state2.receive(bob_message2)?;
+            tokio::time::delay_for(std::time::Duration::new(5, 0)).await;
+            Ok(state3.into())
+        }
+        State::State3(state3) => {
+            tracing::info!("alice is watching for locked btc");
+            let state4 = state3.watch_for_lock_btc(bitcoin_wallet).await?;
+            Ok(state4.into())
+        }
+        State::State4(state4) => {
+            let state5 = state4.lock_xmr(monero_wallet).await?;
+            tracing::info!("alice has locked xmr");
+            Ok(state5.into())
+        }
+        State::State5(state5) => {
+            transport.send_message(state5.next_message().into()).await?;
+            // todo: pass in state4b as a parameter somewhere in this call to prevent the
+            // user from waiting for a message that wont be sent
+            let message3: bob::Message3 = transport.receive_message().await?.try_into()?;
+            let state6 = state5.receive(message3);
+            tracing::info!("alice has received bob message 3");
+            tracing::info!("alice is redeeming btc");
+            state6.redeem_btc(bitcoin_wallet).await.unwrap();
+            Ok(state6.into())
+        }
+        State::State6(state6) => Ok(state6.into()),
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum State {

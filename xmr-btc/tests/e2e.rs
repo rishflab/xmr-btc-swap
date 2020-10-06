@@ -1,5 +1,5 @@
 use crate::{
-    node::{alice::Node as AliceNode, bob::Node as BobNode},
+    node::{AliceNode, BobNode},
     transport::Transport,
 };
 use bitcoin_harness::Bitcoind;
@@ -14,9 +14,9 @@ use tokio::sync::{
 };
 use xmr_btc::{alice, bitcoin, bob, monero};
 
-pub mod node;
-pub mod transport;
-pub mod wallet;
+mod node;
+mod transport;
+mod wallet;
 
 const TEN_XMR: u64 = 10_000_000_000_000;
 const RELATIVE_REFUND_TIMELOCK: u32 = 1;
@@ -149,7 +149,7 @@ pub async fn init_test<'a>(
 mod tests {
     use crate::{
         init_bitcoind, init_test,
-        node::{alice::run_alice_until, bob::run_bob_until},
+        node::{run_alice_until, run_bob_until},
     };
 
     use futures::future;
