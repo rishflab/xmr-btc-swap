@@ -134,11 +134,11 @@ pub mod monero_private_key {
 pub mod bitcoin_amount {
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(value: &bitcoin::Amount, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(x: &bitcoin::Amount, s: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_u64(value.as_sat())
+        s.serialize_u64(x.as_sat())
     }
 
     pub fn deserialize<'de, D>(
