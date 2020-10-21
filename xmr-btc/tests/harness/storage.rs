@@ -10,10 +10,8 @@ impl Database {
     const LAST_STATE_KEY: &'static str = "latest_state";
 
     pub fn open(path: &Path) -> Result<Self> {
-        let path = path
-            .to_str()
-            .ok_or_else(|| anyhow!("The path is not utf-8 valid: {:?}", path))?;
-        let db = sled::open(path).with_context(|| format!("Could not open the DB at {}", path))?;
+        let db =
+            sled::open(path).with_context(|| format!("Could not open the DB at {:?}", path))?;
 
         Ok(Database { db })
     }
