@@ -28,7 +28,7 @@ impl Database {
         self.db
             .compare_and_swap(key, old_value, Some(new_value))
             .context("Could not write in the DB")?
-            .context("Stored swap somehow changed, aborting saving")?; // let _ =
+            .context("Stored swap somehow changed, aborting saving")?;
 
         self.db
             .flush_async()
