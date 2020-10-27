@@ -50,8 +50,6 @@ pub async fn swap(
     bitcoin_wallet: Arc<bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallet>,
     listen: Multiaddr,
-    redeem_address: ::bitcoin::Address,
-    punish_address: ::bitcoin::Address,
 ) -> Result<()> {
     struct Network {
         swarm: Arc<Mutex<Swarm>>,
@@ -134,6 +132,9 @@ pub async fn swap(
         Some(p) => (p.xmr, p.btc),
         None => unreachable!("should have amounts by here"),
     };
+
+    let redeem_address = bitcoin_wallet.as_ref().new_address().await?;
+    let punish_address = redeem_address.clone();
 
     // TODO: Pass this in using <R: RngCore + CryptoRng>
     let rng = &mut OsRng;
