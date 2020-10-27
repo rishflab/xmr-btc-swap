@@ -16,7 +16,7 @@ use anyhow::{bail, Result};
 use futures::{channel::mpsc, StreamExt};
 use libp2p::Multiaddr;
 use log::LevelFilter;
-use std::{io, io::Write, process};
+use std::{io, io::Write, process, sync::Arc};
 use structopt::StructOpt;
 use tracing::info;
 use url::Url;
@@ -25,7 +25,7 @@ mod cli;
 mod trace;
 
 use cli::Options;
-use swap::{alice, bitcoin::Wallet, bob, Cmd, Rsp, SwapAmounts};
+use swap::{alice, bitcoin, bob, monero, Cmd, Rsp, SwapAmounts};
 use xmr_btc::bitcoin::{BroadcastSignedTransaction, BuildTxLockPsbt, SignTxLock};
 
 // TODO: Add root seed file instead of generating new seed each run.
@@ -36,6 +36,7 @@ use xmr_btc::bitcoin::{BroadcastSignedTransaction, BuildTxLockPsbt, SignTxLock};
 pub const PORT: u16 = 9876; // Arbitrarily chosen.
 pub const ADDR: &str = "127.0.0.1";
 pub const BITCOIND_JSON_RPC_URL: &str = "127.0.0.1:8332";
+pub const MONERO_WALLET_RPC_PORT: u16 = 18083;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -54,9 +55,11 @@ async fn main() -> Result<()> {
         }
 
         let url = Url::parse(BITCOIND_JSON_RPC_URL).expect("failed to parse url");
-        let bitcoin_wallet = Wallet::new("alice", &url)
+        let bitcoin_wallet = bitcoin::Wallet::new("alice", &url)
             .await
             .expect("failed to create bitcoin wallet");
+
+        let monero_wallet = Arc::new(monero::Wallet::localhost(MONERO_WALLET_RPC_PORT));
 
         let redeem = bitcoin_wallet
             .new_address()
@@ -67,12 +70,13 @@ async fn main() -> Result<()> {
             .await
             .expect("failed to get new punish address");
 
-        swap_as_alice(alice.clone(), redeem, punish).await?;
+        let bitcoin_wallet = Arc::new(bitcoin_wallet);
+        swap_as_alice(bitcoin_wallet, monero_wallet, alice.clone(), redeem, punish).await?;
     } else {
         info!("running swap node as Bob ...");
 
         let url = Url::parse(BITCOIND_JSON_RPC_URL).expect("failed to parse url");
-        let bitcoin_wallet = Wallet::new("bob", &url)
+        let bitcoin_wallet = bitcoin::Wallet::new("bob", &url)
             .await
             .expect("failed to create bitcoin wallet");
 
@@ -95,17 +99,19 @@ async fn main() -> Result<()> {
 }
 
 async fn swap_as_alice(
+    bitcoin_wallet: Arc<swap::bitcoin::Wallet>,
+    monero_wallet: Arc<swap::monero::Wallet>,
     addr: Multiaddr,
-    redeem: bitcoin::Address,
-    punish: bitcoin::Address,
+    redeem: ::bitcoin::Address,
+    punish: ::bitcoin::Address,
 ) -> Result<()> {
-    alice::swap(addr, redeem, punish).await
+    alice::swap(bitcoin_wallet, monero_wallet, addr, redeem, punish).await
 }
 
 async fn swap_as_bob<W>(
     sats: u64,
     alice: Multiaddr,
-    refund: bitcoin::Address,
+    refund: ::bitcoin::Address,
     wallet: W,
 ) -> Result<()>
 where
