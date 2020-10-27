@@ -13,6 +13,7 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{bail, Result};
+use cli::Options;
 use futures::{channel::mpsc, StreamExt};
 use libp2p::Multiaddr;
 use log::LevelFilter;
@@ -24,9 +25,7 @@ use url::Url;
 mod cli;
 mod trace;
 
-use cli::Options;
 use swap::{alice, bitcoin, bob, monero, Cmd, Rsp, SwapAmounts};
-use xmr_btc::bitcoin::{BroadcastSignedTransaction, BuildTxLockPsbt, SignTxLock};
 
 // TODO: Add root seed file instead of generating new seed each run.
 // TODO: Remove all instances of the todo! macro
@@ -80,17 +79,20 @@ async fn main() -> Result<()> {
             .await
             .expect("failed to create bitcoin wallet");
 
+        let monero_wallet = Arc::new(monero::Wallet::localhost(MONERO_WALLET_RPC_PORT));
+
         let refund = bitcoin_wallet
             .new_address()
             .await
             .expect("failed to get new address");
 
+        let bitcoin_wallet = Arc::new(bitcoin_wallet);
         match (opt.piconeros, opt.satoshis) {
             (Some(_), Some(_)) => bail!("Please supply only a single amount to swap"),
             (None, None) => bail!("Please supply an amount to swap"),
             (Some(_picos), _) => todo!("support starting with picos"),
             (None, Some(sats)) => {
-                swap_as_bob(sats, alice, refund, bitcoin_wallet).await?;
+                swap_as_bob(bitcoin_wallet, monero_wallet, sats, alice, refund).await?;
             }
         };
     }
@@ -108,18 +110,24 @@ async fn swap_as_alice(
     alice::swap(bitcoin_wallet, monero_wallet, addr, redeem, punish).await
 }
 
-async fn swap_as_bob<W>(
+async fn swap_as_bob(
+    bitcoin_wallet: Arc<swap::bitcoin::Wallet>,
+    monero_wallet: Arc<swap::monero::Wallet>,
     sats: u64,
     alice: Multiaddr,
     refund: ::bitcoin::Address,
-    wallet: W,
-) -> Result<()>
-where
-    W: BuildTxLockPsbt + SignTxLock + BroadcastSignedTransaction + Send + Sync + 'static,
-{
+) -> Result<()> {
     let (cmd_tx, mut cmd_rx) = mpsc::channel(1);
     let (mut rsp_tx, rsp_rx) = mpsc::channel(1);
-    tokio::spawn(bob::swap(sats, alice, cmd_tx, rsp_rx, refund, wallet));
+    tokio::spawn(bob::swap(
+        bitcoin_wallet,
+        monero_wallet,
+        sats,
+        alice,
+        cmd_tx,
+        rsp_rx,
+        refund,
+    ));
 
     loop {
         let read = cmd_rx.next().await;
