@@ -97,6 +97,8 @@ pub async fn swap(
         }
     }
 
+    debug!("swapping ...");
+
     let message0: bob::Message0;
     let mut last_amounts: Option<SwapAmounts> = None;
 
@@ -116,6 +118,7 @@ pub async fn swap(
                 swarm.send_amounts(channel, amounts);
             }
             OutEvent::Message0(msg) => {
+                debug!("got message 0 from Bob");
                 // We don't want Bob to be able to crash us by sending an out of
                 // order message. Keep looping if Bob has not requested amounts.
                 if last_amounts.is_some() {
