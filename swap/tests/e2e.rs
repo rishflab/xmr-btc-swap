@@ -84,6 +84,9 @@ mod e2e_test {
             )
         };
 
+        dbg!(proxy_port);
+        dbg!(&alice_multiaddr);
+
         let cli = Cli::default();
         let bitcoind = Bitcoind::new(&cli, "0.19.1").unwrap();
         let _ = bitcoind.init(5).await;
@@ -123,7 +126,7 @@ mod e2e_test {
             alice_btc_wallet.clone(),
             alice_xmr_wallet.clone(),
             alice_multiaddr.clone(),
-            Some(9876),
+            Some(9877),
         );
 
         let (cmd_tx, mut _cmd_rx) = mpsc::channel(1);

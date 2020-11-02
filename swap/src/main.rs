@@ -36,9 +36,6 @@ pub const ADDR: &str = "127.0.0.1";
 pub const BITCOIND_JSON_RPC_URL: &str = "http://127.0.0.1:8332";
 pub const MONERO_WALLET_RPC_PORT: u16 = 18083;
 
-#[cfg(feature = "tor")]
-pub const TOR_PORT: u16 = PORT + 1;
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let opt = Options::from_args();
@@ -53,7 +50,7 @@ async fn main() -> Result<()> {
             .get_onion_address()
             .get_address_without_dot_onion();
         (
-            format!("/onion3/{}:{}", onion_address, TOR_PORT),
+            format!("/onion3/{}:{}", onion_address, PORT),
             create_tor_service(tor_secret_key).await?,
         )
     };
@@ -119,7 +116,7 @@ async fn create_tor_service(
     tracing::info!("Tor authenticated.");
 
     authenticated_connection
-        .add_service(TOR_PORT, &tor_secret_key)
+        .add_service(PORT, &tor_secret_key)
         .await?;
     tracing::info!("Tor service added.");
 

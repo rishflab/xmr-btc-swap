@@ -82,6 +82,7 @@ pub async fn swap(
 
     let mut swarm = new_swarm()?;
 
+    dbg!(&addr);
     libp2p::Swarm::dial_addr(&mut swarm, addr)?;
     let alice = match swarm.next().await {
         OutEvent::ConnectionEstablished(alice) => alice,
