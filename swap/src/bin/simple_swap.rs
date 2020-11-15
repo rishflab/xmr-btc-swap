@@ -39,6 +39,7 @@ pub async fn swap(state: AliceState, io: Io) -> Result<AliceState> {
         AliceState::Negotiated => {
             // Alice and Bob have exchanged info
             // Todo: Alice watches for BTC to be locked on chain
+            // Todo: Timeout at t1?
             swap(AliceState::BtcLocked, io)
         }
         AliceState::BtcLocked => {
@@ -61,7 +62,7 @@ pub async fn swap(state: AliceState, io: Io) -> Result<AliceState> {
             }
         }
         AliceState::Cancelled => {
-            // Wait until t2 or if TxRefuned is seen
+            // Wait until t2 or if TxRefund is seen
             // If Bob has refunded the Alice should extract Bob's monero secret key and move
             // the TxLockXmr output to her wallet.
             let refunded = unimplemented!();
@@ -73,39 +74,53 @@ pub async fn swap(state: AliceState, io: Io) -> Result<AliceState> {
         }
         AliceState::XmrRefunded => Ok(AliceState::XmrRefunded),
         AliceState::BtcRedeemed => Ok(AliceState::BtcRedeemed),
-        AliceState::Punished => {
-            // Alice has punished
-            Ok(AliceState::Punished)
-        }
+        AliceState::Punished => Ok(AliceState::Punished),
         AliceState::SafelyAborted => Ok(AliceState::SafelyAborted),
     }
 }
 
 // State machine driver for recovery execution
-pub async fn recover(state: AliceState, io: Io) -> Result<AliceState> {
+pub async fn abort(state: AliceState, io: Io) -> Result<AliceState> {
     match state {
         AliceState::Started => {
             // Nothing has been commited by either party, abort swap.
-            recover(AliceState::SafelyAborted, io)
+            abort(AliceState::SafelyAborted, io)
         }
         AliceState::Negotiated => {
             // Nothing has been commited by either party, abort swap.
-            recover(AliceState::SafelyAborted, io)
+            abort(AliceState::SafelyAborted, io)
         }
         AliceState::BtcLocked => {
             // Alice has seen that Bob has locked BTC
             // Alice does not need to do anything to recover
-            recover(AliceState::SafelyAborted, io)
+            abort(AliceState::SafelyAborted, io)
         }
         AliceState::XmrLocked => {
             // Alice has locked XMR
-            // Alice publishes tx_cancel after t1 and then tx_punish after t2 to retrieve
-            // xmr
-            recover(AliceState::BtcRedeemed, io)
+            // Alice watches for TxRedeem until t1
+            if unimplemented!("TxRedeemSeen") {
+                // Alice has successfully redeemed, protocol was a success
+                abort(AliceState::BtcRedeemed, io)
+            } else if unimplemented!("T1Elapsed") {
+                // publish TxCancel or see if it has been published
+                abort(AliceState::Cancelled, io)
+            }
         }
-        AliceState::XmrRefunded => {}
-        AliceState::BtcRedeemed => Ok(AliceState::Cancelled),
-        AliceState::Punished => {}
+        AliceState::Cancelled => {
+            // Alice has cancelled the swap
+            // Alice waits watches for t2 or TxRefund
+            if unimplemented!("TxRefundSeen") {
+                // Bob has refunded and leaked s_b
+                abort(AliceState::XmrRefunded, io)
+            } else if unimplemented!("T1Elapsed") {
+                // publish TxCancel or see if it has been published
+                // Wait until t2 and publish TxPunish
+                abort(AliceState::Punished, io)
+            }
+        }
+        AliceState::BtcRedeemed => Ok(AliceState::BtcRedeemed),
+        AliceState::XmrRefunded => Ok(AliceState::XmrRefunded),
+        AliceState::Punished => Ok(AliceState::Punished),
         AliceState::SafelyAborted => Ok(AliceState::SafelyAborted),
     }
 }
@@ -122,7 +137,7 @@ fn main() {
         Options::Alice { .. } => swap(AliceState::Started, io),
         Options::Recover { .. } => {
             let stored_state: AliceState = unimplemented!("io.get_state(uuid)?");
-            recover(stored_state, io);
+            abort(stored_state, io);
         }
         _ => {}
     };
