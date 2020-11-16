@@ -7,8 +7,9 @@ description = "XMR/BTC trustless atomic swaps."
 
 [dependencies]
 anyhow = "1"
-async-trait = "0.1"
 atty = "0.2"
+async-recursion = "0.3"
+async-trait = "0.1"
 backoff = { version = "0.2", features = ["tokio"] }
 base64 = "0.12"
 bitcoin = { version = "0.23", features = ["rand", "use-serde"] } # TODO: Upgrade other crates in this repo to use this version.
