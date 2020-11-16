@@ -1,6 +1,7 @@
 //! Run an XMR/BTC swap in the role of Alice.
 //! Alice holds XMR and wishes receive BTC.
 use anyhow::Result;
+use async_recursion::async_recursion;
 use async_trait::async_trait;
 use backoff::{backoff::Constant as ConstantBackoff, future::FutureOperation as _};
 use genawaiter::GeneratorState;
@@ -61,7 +62,8 @@ pub enum AliceState {
 }
 
 // State machine driver for swap execution
-pub async fn simple_swap(state: AliceState, io: Io) -> BoxFuture<'static, AliceState> {
+#[async_recursion]
+pub async fn simple_swap(state: AliceState, io: Io) -> Result<AliceState> {
     match state {
         AliceState::Started => {
             // Alice and Bob exchange swap info
@@ -104,15 +106,16 @@ pub async fn simple_swap(state: AliceState, io: Io) -> BoxFuture<'static, AliceS
                 simple_swap(AliceState::Punished, io).await
             }
         }
-        AliceState::XmrRefunded => Box::pin(AliceState::XmrRefunded),
-        AliceState::BtcRedeemed => Box::pin(Ok(AliceState::BtcRedeemed)),
-        AliceState::Punished => Box::pin(Ok(AliceState::Punished)),
-        AliceState::SafelyAborted => Box::pin(Ok(AliceState::SafelyAborted)),
+        AliceState::XmrRefunded => Ok(AliceState::XmrRefunded),
+        AliceState::BtcRedeemed => Ok(AliceState::BtcRedeemed),
+        AliceState::Punished => Ok(AliceState::Punished),
+        AliceState::SafelyAborted => Ok(AliceState::SafelyAborted),
     }
 }
 
 // State machine driver for recovery execution
-pub async fn abort(state: AliceState, io: Io) -> BoxFuture<'static, AliceState> {
+#[async_recursion]
+pub async fn abort(state: AliceState, io: Io) -> Result<AliceState> {
     match state {
         AliceState::Started => {
             // Nothing has been commited by either party, abort swap.
@@ -150,6 +153,8 @@ pub async fn abort(state: AliceState, io: Io) -> BoxFuture<'static, AliceState> 
                 // publish TxCancel or see if it has been published
                 // Wait until t2 and publish TxPunish
                 abort(AliceState::Punished, io).await
+            } else {
+                Err(unimplemented!())
             }
         }
         AliceState::BtcRedeemed => Ok(AliceState::BtcRedeemed),
