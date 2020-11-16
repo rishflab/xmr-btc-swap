@@ -10,18 +10,18 @@ use swap::{
 fn main() {
     let opt = Options::from_args();
 
-    let io: Io = {
-        let db = Database::open(std::path::Path::new("./.swap-db/")).unwrap();
+    let _io: Io = {
+        let _db = Database::open(std::path::Path::new("./.swap-db/")).unwrap();
         unimplemented!()
     };
 
     match opt {
         Options::Alice { .. } => {
-            simple_swap(AliceState::Started, io);
+            simple_swap(AliceState::Started, _io);
         }
         Options::Recover { .. } => {
-            let stored_state: AliceState = unimplemented!("io.get_state(uuid)?");
-            abort(stored_state, io);
+            let _stored_state: AliceState = unimplemented!("io.get_state(uuid)?");
+            abort(_stored_state, _io);
         }
         _ => {}
     };
