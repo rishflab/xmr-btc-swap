@@ -80,11 +80,9 @@ pub async fn simple_swap(state: BobState, io: Io) -> Result<BobState> {
         }
         BobState::XmrLocked => {
             // Alice has locked Xmr
-            // Bob sends Alice his key and waits for a response
-            // Todo: Poll the swarm here until ack msg from Alice arrives or t1 elapses
-            let ack_received = unimplemented!();
-            if ack_received {
-                // Watch for Alice to Redeem BTC
+            // Bob sends Alice his key
+            // Todo: This should be a oneshot
+            if unimplemented!("Redeemed before t1") {
                 simple_swap(BobState::BtcRedeemed, io).await
             } else {
                 // submit TxCancel
@@ -92,11 +90,8 @@ pub async fn simple_swap(state: BobState, io: Io) -> Result<BobState> {
             }
         }
         BobState::Cancelled => {
-            // Wait until t2 or if TxRefund is seen
-            // If Bob has refunded the Alice should extract Bob's monero secret key and move
-            // the TxLockXmr output to her wallet.
-            let refunded = unimplemented!();
-            if refunded {
+            if unimplemented!("<t2") {
+                // submit TxRefund
                 simple_swap(BobState::XmrRefunded, io).await
             } else {
                 simple_swap(BobState::Punished, io).await
