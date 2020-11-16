@@ -1,6 +1,7 @@
 //! Run an XMR/BTC swap in the role of Bob.
 //! Bob holds BTC and wishes receive XMR.
 use anyhow::Result;
+use async_recursion::async_recursion;
 use async_trait::async_trait;
 use backoff::{backoff::Constant as ConstantBackoff, future::FutureOperation as _};
 use futures::{
@@ -24,6 +25,7 @@ mod message3;
 use self::{amounts::*, message0::*, message1::*, message2::*, message3::*};
 use crate::{
     bitcoin::{self, TX_LOCK_MINE_TIMEOUT},
+    io::Io,
     monero,
     network::{
         peer_tracker::{self, PeerTracker},
@@ -34,12 +36,145 @@ use crate::{
     storage::Database,
     Cmd, Rsp, SwapAmounts, PUNISH_TIMELOCK, REFUND_TIMELOCK,
 };
+use futures::future::BoxFuture;
 use xmr_btc::{
     alice,
     bitcoin::{BroadcastSignedTransaction, EncryptedSignature, SignTxLock},
     bob::{self, action_generator, ReceiveTransferProof, State0},
     monero::CreateWalletForOutput,
 };
+
+// The same data structure is used for swap execution and recovery.
+// This allows for a seamless transition from a failed swap to recovery.
+pub enum BobState {
+    Started,
+    Negotiated,
+    BtcLocked,
+    XmrLocked,
+    BtcRedeemed,
+    XmrRedeemed,
+    XmrRefunded,
+    Cancelled,
+    Punished,
+    SafelyAborted,
+}
+
+// State machine driver for swap execution
+#[async_recursion]
+pub async fn simple_swap(state: BobState, io: Io) -> Result<BobState> {
+    match state {
+        BobState::Started => {
+            // Alice and Bob exchange swap info
+            // Todo: Poll the swarm here until Alice and Bob have exchanged info
+            simple_swap(BobState::Negotiated, io).await
+        }
+        BobState::Negotiated => {
+            // Alice and Bob have exchanged info
+            // Bob Locks Btc
+            simple_swap(BobState::BtcLocked, io).await
+        }
+        BobState::BtcLocked => {
+            // Bob has locked Btc
+            // Watch for Alice to Lock Xmr
+            simple_swap(BobState::XmrLocked, io).await
+        }
+        BobState::XmrLocked => {
+            // Alice has locked Xmr
+            // Bob sends Alice his key and waits for a response
+            // Todo: Poll the swarm here until ack msg from Alice arrives or t1 elapses
+            let ack_received = unimplemented!();
+            if ack_received {
+                // Watch for Alice to Redeem BTC
+                simple_swap(BobState::BtcRedeemed, io).await
+            } else {
+                // submit TxCancel
+                simple_swap(BobState::Cancelled, io).await
+            }
+        }
+        BobState::Cancelled => {
+            // Wait until t2 or if TxRefund is seen
+            // If Bob has refunded the Alice should extract Bob's monero secret key and move
+            // the TxLockXmr output to her wallet.
+            let refunded = unimplemented!();
+            if refunded {
+                simple_swap(BobState::XmrRefunded, io).await
+            } else {
+                simple_swap(BobState::Punished, io).await
+            }
+        }
+        BobState::XmrRefunded => Ok(BobState::XmrRefunded),
+        BobState::BtcRedeemed => {
+            // Bob redeems XMR using revealed s_a
+            simple_swap(BobState::XmrRedeemed, io).await
+        }
+        BobState::Punished => Ok(BobState::Punished),
+        BobState::SafelyAborted => Ok(BobState::SafelyAborted),
+        BobState::XmrRedeemed => Ok(BobState::XmrRedeemed),
+    }
+}
+
+// State machine driver for recovery execution
+#[async_recursion]
+pub async fn abort(state: BobState, io: Io) -> Result<BobState> {
+    match state {
+        BobState::Started => {
+            // Nothing has been commited by either party, abort swap.
+            abort(BobState::SafelyAborted, io).await
+        }
+        BobState::Negotiated => {
+            // Nothing has been commited by either party, abort swap.
+            abort(BobState::SafelyAborted, io).await
+        }
+        BobState::BtcLocked => {
+            // Bob has locked BTC and must refund it
+            // Bob waits for alice to publish TxRedeem or t1
+            if unimplemented!("TxRedeemSeen") {
+                // Alice has redeemed revealing s_a
+                abort(BobState::BtcRedeemed, io).await
+            } else if unimplemented!("T1Elapsed") {
+                // publish TxCancel or see if it has been published
+                abort(BobState::Cancelled, io).await
+            } else {
+                Err(unimplemented!())
+            }
+        }
+        BobState::XmrLocked => {
+            // Alice has locked XMR
+            // Alice watches for TxRedeem until t1
+            if unimplemented!("TxRedeemSeen") {
+                // Alice has successfully redeemed, protocol was a success
+                abort(BobState::BtcRedeemed, io).await
+            } else if unimplemented!("T1Elapsed") {
+                // publish TxCancel or see if it has been published
+                abort(BobState::Cancelled, io).await
+            } else {
+                Err(unimplemented!())
+            }
+        }
+        BobState::Cancelled => {
+            // Alice has cancelled the swap
+            // Alice waits watches for t2 or TxRefund
+            if unimplemented!("TxRefundSeen") {
+                // Bob has refunded and leaked s_b
+                abort(BobState::XmrRefunded, io).await
+            } else if unimplemented!("T1Elapsed") {
+                // publish TxCancel or see if it has been published
+                // Wait until t2 and publish TxPunish
+                abort(BobState::Punished, io).await
+            } else {
+                Err(unimplemented!())
+            }
+        }
+        BobState::BtcRedeemed => {
+            // Bob uses revealed s_a to redeem XMR
+            abort(BobState::XmrRedeemed, io).await
+        }
+        BobState::XmrRefunded => Ok(BobState::XmrRefunded),
+        BobState::Punished => Ok(BobState::Punished),
+        BobState::SafelyAborted => Ok(BobState::SafelyAborted),
+        BobState::XmrRedeemed => Ok(BobState::XmrRedeemed),
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn swap(

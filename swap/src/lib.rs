@@ -5,7 +5,7 @@ pub mod alice;
 pub mod bitcoin;
 pub mod bob;
 pub mod cli;
-mod io;
+pub mod io;
 pub mod monero;
 pub mod network;
 pub mod recover;
