@@ -52,8 +52,8 @@ pub enum BobState {
     BtcLocked,
     XmrLocked,
     BtcRedeemed,
+    BtcRefunded,
     XmrRedeemed,
-    XmrRefunded,
     Cancelled,
     Punished,
     SafelyAborted,
@@ -92,12 +92,12 @@ pub async fn simple_swap(state: BobState, io: Io) -> Result<BobState> {
         BobState::Cancelled => {
             if unimplemented!("<t2") {
                 // submit TxRefund
-                simple_swap(BobState::XmrRefunded, io).await
+                simple_swap(BobState::BtcRefunded, io).await
             } else {
                 simple_swap(BobState::Punished, io).await
             }
         }
-        BobState::XmrRefunded => Ok(BobState::XmrRefunded),
+        BobState::BtcRefunded => Ok(BobState::BtcRefunded),
         BobState::BtcRedeemed => {
             // Bob redeems XMR using revealed s_a
             simple_swap(BobState::XmrRedeemed, io).await
@@ -134,37 +134,33 @@ pub async fn abort(state: BobState, io: Io) -> Result<BobState> {
             }
         }
         BobState::XmrLocked => {
-            // Alice has locked XMR
-            // Alice watches for TxRedeem until t1
-            if unimplemented!("TxRedeemSeen") {
-                // Alice has successfully redeemed, protocol was a success
-                abort(BobState::BtcRedeemed, io).await
-            } else if unimplemented!("T1Elapsed") {
-                // publish TxCancel or see if it has been published
+            // Alice has locked Xmr
+            // Wait until t1
+            if unimplemented!(">t1 and <t2") {
+                // Bob publishes TxCancel
                 abort(BobState::Cancelled, io).await
             } else {
-                Err(unimplemented!())
+                // >t2
+                // submit TxCancel
+                abort(BobState::Punished, io).await
             }
         }
         BobState::Cancelled => {
-            // Alice has cancelled the swap
-            // Alice waits watches for t2 or TxRefund
-            if unimplemented!("TxRefundSeen") {
-                // Bob has refunded and leaked s_b
-                abort(BobState::XmrRefunded, io).await
-            } else if unimplemented!("T1Elapsed") {
-                // publish TxCancel or see if it has been published
-                // Wait until t2 and publish TxPunish
-                abort(BobState::Punished, io).await
+            // Bob has cancelled the swap
+            // If <t2 Bob refunds
+            if unimplemented!("<t2") {
+                // Submit TxRefund
+                abort(BobState::BtcRefunded, io).await
             } else {
-                Err(unimplemented!())
+                // Bob failed to refund in time and has been punished
+                abort(BobState::Punished, io).await
             }
         }
         BobState::BtcRedeemed => {
             // Bob uses revealed s_a to redeem XMR
             abort(BobState::XmrRedeemed, io).await
         }
-        BobState::XmrRefunded => Ok(BobState::XmrRefunded),
+        BobState::BtcRefunded => Ok(BobState::BtcRefunded),
         BobState::Punished => Ok(BobState::Punished),
         BobState::SafelyAborted => Ok(BobState::SafelyAborted),
         BobState::XmrRedeemed => Ok(BobState::XmrRedeemed),
