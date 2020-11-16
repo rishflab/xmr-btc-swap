@@ -38,8 +38,7 @@ use crate::{
     storage::Database,
     SwapAmounts, PUNISH_TIMELOCK, REFUND_TIMELOCK,
 };
-use futures::future::BoxFuture;
-use libp2p::core::transport::upgrade::DialUpgradeFuture;
+
 use xmr_btc::{
     alice::{self, action_generator, Action, ReceiveBitcoinRedeemEncsig, State0},
     bitcoin::BroadcastSignedTransaction,
@@ -85,9 +84,7 @@ pub async fn simple_swap(state: AliceState, io: Io) -> Result<AliceState> {
             // Alice has locked Xmr
             // Alice waits until Bob sends her key to redeem BTC
             // Todo: Poll the swarm here until msg from Bob arrives or t1
-            let key_received = unimplemented!();
-
-            if key_received {
+            if unimplemented!("key_received") {
                 // Alice redeems BTC
                 simple_swap(AliceState::BtcRedeemed, io).await
             } else {
@@ -99,8 +96,7 @@ pub async fn simple_swap(state: AliceState, io: Io) -> Result<AliceState> {
             // Wait until t2 or if TxRefund is seen
             // If Bob has refunded the Alice should extract Bob's monero secret key and move
             // the TxLockXmr output to her wallet.
-            let refunded = unimplemented!();
-            if refunded {
+            if unimplemented!("refunded") {
                 simple_swap(AliceState::XmrRefunded, io).await
             } else {
                 simple_swap(AliceState::Punished, io).await
