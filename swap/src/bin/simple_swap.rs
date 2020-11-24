@@ -1,10 +1,12 @@
-use structopt::StructOpt;
-use swap::{
-    alice::{abort, simple_swap, AliceState},
-    cli::Options,
-    io::Io,
-    storage::Database,
-};
+#![allow(non_snake_case)]
+
+// use structopt::StructOpt;
+// use swap::{
+//     alice::{abort, simple_swap, AliceState},
+//     cli::Options,
+//     io::Io,
+//     storage::Database,
+// };
 
 fn main() {
     todo!()
