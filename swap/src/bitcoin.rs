@@ -146,3 +146,10 @@ impl TransactionBlockHeight for Wallet {
         .expect("transient errors to be retried")
     }
 }
+
+#[async_trait]
+impl GetRawTransaction for Wallet {
+    async fn get_raw_transaction(&self, txid: Txid) -> Option<Transaction> {
+        todo!()
+    }
+}
