@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display};
 
@@ -6,6 +8,7 @@ pub mod bitcoin;
 pub mod bob;
 pub mod bob_simple;
 pub mod cli;
+pub mod io;
 pub mod monero;
 pub mod network;
 pub mod recover;
@@ -33,6 +36,7 @@ pub enum Rsp {
 
 /// XMR/BTC swap amounts.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+// TODO(Franck): review necessity of this struct
 pub struct SwapAmounts {
     /// Amount of BTC to swap.
     #[serde(with = "::bitcoin::util::amount::serde::as_sat")]
