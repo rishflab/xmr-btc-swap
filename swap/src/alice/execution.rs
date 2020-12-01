@@ -28,14 +28,16 @@ use xmr_btc::{
 };
 
 // For each step, we are giving Bob 10 minutes to act.
-static BOB_TIME_TO_ACT: Lazy<Duration> = Lazy::new(|| Duration::from_secs(10 * 60));
+static BOB_TIME_TO_ACT: Lazy<Duration> = Lazy::new(|| Duration::from_secs(10));
 
 // The maximum we assume we need to wait from the moment the monero transaction
 // is mined to the moment it reaches finality. We set 15 confirmations for now
 // (based on Kraken). 1.5 multiplier in case the blockchain is slower than
 // usually. Average of 2 minutes block time
-static MONERO_MAX_FINALITY_TIME: Lazy<Duration> =
-    Lazy::new(|| Duration::from_secs_f64(15f64 * 1.5 * 2f64 * 60f64));
+// static MONERO_MAX_FINALITY_TIME: Lazy<Duration> =
+//     Lazy::new(|| Duration::from_secs_f64(15f64 * 1.5 * 2f64 * 60f64));
+
+static MONERO_MAX_FINALITY_TIME: Lazy<Duration> = Lazy::new(|| Duration::from_secs_f64(30.0));
 
 pub async fn negotiate(
     amounts: SwapAmounts,
@@ -142,10 +144,10 @@ where
     .await
     .context("Failed to find lock Bitcoin tx")?;
 
-    // We saw the transaction in the mempool, waiting for it to be confirmed.
-    bitcoin_wallet
-        .wait_for_transaction_finality(lock_bitcoin_txid)
-        .await;
+    // // We saw the transaction in the mempool, waiting for it to be confirmed.
+    // bitcoin_wallet
+    //     .wait_for_transaction_finality(lock_bitcoin_txid)
+    //     .await;
 
     Ok(())
 }
@@ -181,11 +183,19 @@ where
 }
 
 pub async fn wait_for_bitcoin_encrypted_signature(swarm: &mut Swarm) -> Result<EncryptedSignature> {
-    let event = timeout(*MONERO_MAX_FINALITY_TIME, swarm.next())
-        .await
-        .context("Failed to receive Bitcoin encrypted signature from Bob")?;
+    // let event = timeout(*MONERO_MAX_FINALITY_TIME, swarm.next())
+    //     .await
+    //     .context("Failed to receive Bitcoin encrypted signature from Bob")?;
+    //
+    // match event {
+    //     OutEvent::Message3(msg) => Ok(msg.tx_redeem_encsig),
+    //     other => bail!(
+    //         "Expected Bob's Bitcoin redeem encrypted signature, got: {:?}",
+    //         other
+    //     ),
+    // }
 
-    match event {
+    match swarm.next().await {
         OutEvent::Message3(msg) => Ok(msg.tx_redeem_encsig),
         other => bail!(
             "Expected Bob's Bitcoin redeem encrypted signature, got: {:?}",
@@ -229,14 +239,14 @@ pub async fn publish_bitcoin_redeem_transaction<W>(
     bitcoin_wallet: Arc<W>,
 ) -> Result<()>
 where
-    W: BroadcastSignedTransaction + WaitForTransactionFinality,
+    W: BroadcastSignedTransaction, //+ WaitForTransactionFinality,
 {
     let tx_id = bitcoin_wallet
         .broadcast_signed_transaction(redeem_tx)
         .await?;
 
-    // TODO(Franck): Not sure if we wait for finality here or just mined
-    bitcoin_wallet.wait_for_transaction_finality(tx_id).await;
+    // // TODO(Franck): Not sure if we wait for finality here or just mined
+    // bitcoin_wallet.wait_for_transaction_finality(tx_id).await;
     Ok(())
 }
 
@@ -364,13 +374,13 @@ pub async fn publish_bitcoin_punish_transaction<W>(
     bitcoin_wallet: Arc<W>,
 ) -> Result<bitcoin::Txid>
 where
-    W: BroadcastSignedTransaction + WaitForTransactionFinality,
+    W: BroadcastSignedTransaction, //+ WaitForTransactionFinality,
 {
     let txid = bitcoin_wallet
         .broadcast_signed_transaction(punish_tx)
         .await?;
 
-    bitcoin_wallet.wait_for_transaction_finality(txid).await;
+    // bitcoin_wallet.wait_for_transaction_finality(txid).await;
 
     Ok(txid)
 }

@@ -5,9 +5,10 @@ use crate::{
 };
 use anyhow::Result;
 use async_recursion::async_recursion;
-use libp2p::PeerId;
+use libp2p::{core::Multiaddr, PeerId};
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
+use tracing::{debug, info};
 use uuid::Uuid;
 use xmr_btc::bob::{self};
 
@@ -18,6 +19,7 @@ pub enum BobState {
         state0: bob::State0,
         amounts: SwapAmounts,
         peer_id: PeerId,
+        addr: Multiaddr,
     },
     Negotiated(bob::State2, PeerId),
     BtcLocked(bob::State3, PeerId),
@@ -50,11 +52,14 @@ where
             state0,
             amounts,
             peer_id,
+            addr,
         } => {
+            info!("Starting protocol for bob");
             let (swap_amounts, state2) = negotiate(
                 state0,
                 amounts,
                 &mut swarm,
+                addr,
                 &mut rng,
                 bitcoin_wallet.clone(),
             )
@@ -71,6 +76,7 @@ where
             .await
         }
         BobState::Negotiated(state2, alice_peer_id) => {
+            info!("Negotiated");
             // Alice and Bob have exchanged info
             let state3 = state2.lock_btc(bitcoin_wallet.as_ref()).await?;
             // db.insert_latest_state(state);
@@ -88,6 +94,7 @@ where
         // Bob has locked Btc
         // Watch for Alice to Lock Xmr or for t1 to elapse
         BobState::BtcLocked(state3, alice_peer_id) => {
+            info!("btc locked");
             // todo: watch until t1, not indefinetely
             let state4 = match swarm.next().await {
                 OutEvent::Message2(msg) => {
@@ -109,14 +116,25 @@ where
             .await
         }
         BobState::XmrLocked(state, alice_peer_id) => {
+            info!("xmr locked");
             // Alice has locked Xmr
             // Bob sends Alice his key
             let tx_redeem_encsig = state.tx_redeem_encsig();
             // Do we have to wait for a response?
             // What if Alice fails to receive this? Should we always resend?
             // todo: If we cannot dial Alice we should go to EncSigSent. Maybe dialing
-            // should happen in this arm?
+            //
             swarm.send_message3(alice_peer_id.clone(), tx_redeem_encsig);
+            // Sadly we have to poll the swarm to get make sure the message is sent?
+            // FIXME: Having to wait for Alice's response here is a big problem, because
+            // we're stuck if she doesn't send her response back. I believe this is
+            // currently necessary, so we may have to rework this and/or how we use libp2p
+            match swarm.next().await {
+                OutEvent::Message3 => {
+                    debug!("Got Message3 empty response");
+                }
+                other => panic!("unexpected event: {:?}", other),
+            };
 
             swap(
                 BobState::EncSigSent(state, alice_peer_id),
@@ -130,6 +148,7 @@ where
             .await
         }
         BobState::EncSigSent(state, ..) => {
+            info!("enc sig sent");
             // Watch for redeem
             let redeem_watcher = state.watch_for_redeem_btc(bitcoin_wallet.as_ref());
             let t1_timeout = state.wait_for_t1(bitcoin_wallet.as_ref());
@@ -169,6 +188,7 @@ where
             }
         }
         BobState::BtcRedeemed(state) => {
+            info!("btc redeemed");
             // Bob redeems XMR using revealed s_a
             state.claim_xmr(monero_wallet.as_ref()).await?;
             swap(

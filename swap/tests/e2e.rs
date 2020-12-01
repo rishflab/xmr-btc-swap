@@ -139,6 +139,7 @@ async fn simple_swap_happy_path() {
     let bitcoind = Bitcoind::new(&cli, "0.19.1").unwrap();
     dbg!(&bitcoind.node_url);
     let _ = bitcoind.init(5).await;
+    dbg!("started bitcoind");
 
     let btc = bitcoin::Amount::from_sat(1_000_000);
     let btc_alice = bitcoin::Amount::ZERO;
@@ -201,7 +202,8 @@ async fn simple_swap_happy_path() {
             v_a,
         }
     };
-    let alice_swarm = alice::new_swarm(alice_multiaddr, alice_transport, alice_behaviour).unwrap();
+    let alice_swarm =
+        alice::new_swarm(alice_multiaddr.clone(), alice_transport, alice_behaviour).unwrap();
     let alice_swap = alice::swap::swap(
         alice_state,
         alice_swarm,
@@ -227,8 +229,9 @@ async fn simple_swap_happy_path() {
         state0,
         amounts,
         peer_id: alice_peer_id,
+        addr: alice_multiaddr,
     };
-    let bob_swarm = bob::new_swarm(bob_transport, bob_behaviour).unwrap();
+    let mut bob_swarm = bob::new_swarm(bob_transport, bob_behaviour).unwrap();
     let bob_swap = bob::swap::swap(
         bob_state,
         bob_swarm,

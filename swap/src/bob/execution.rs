@@ -7,20 +7,22 @@ use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use tokio::{stream::StreamExt, sync::mpsc};
 
+use libp2p::core::Multiaddr;
 use xmr_btc::bob::State2;
 
 pub async fn negotiate<R>(
     state0: xmr_btc::bob::State0,
     amounts: SwapAmounts,
     swarm: &mut Swarm,
+    addr: Multiaddr,
     mut rng: R,
     bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
 ) -> Result<(SwapAmounts, State2)>
 where
     R: RngCore + CryptoRng + Send,
 {
-    // todo: dial the swarm outside
-    // libp2p::Swarm::dial_addr(&mut swarm, addr)?;
+    libp2p::Swarm::dial_addr(swarm, addr)?;
+
     let alice = match swarm.next().await {
         OutEvent::ConnectionEstablished(alice) => alice,
         other => panic!("unexpected event: {:?}", other),

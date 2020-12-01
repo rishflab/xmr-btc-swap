@@ -146,9 +146,9 @@ impl TransactionBlockHeight for Wallet {
     }
 }
 
-#[async_trait]
-impl WaitForTransactionFinality for Wallet {
-    async fn wait_for_transaction_finality(&self, _txid: Txid) {
-        todo!()
-    }
-}
+// #[async_trait]
+// impl WaitForTransactionFinality for Wallet {
+//     async fn wait_for_transaction_finality(&self, _txid: Txid) {
+//         todo!()
+//     }
+// }
