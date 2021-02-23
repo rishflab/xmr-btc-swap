@@ -26,7 +26,9 @@ jobs:
 
       - name: Build ${{ matrix.target }} release binary
 #        run: cargo build --target=${{ matrix.target }} --release --package swap --bin swap_cli
-        run: touch target/release/swap_cli
+        run:  |
+          mkdir -p target/release
+          touch target/release/swap_cli
 
       # Remove once python 3 is the default
       - uses: actions/setup-python@v1
