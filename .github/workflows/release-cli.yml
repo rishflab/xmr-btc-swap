@@ -25,7 +25,8 @@ jobs:
           token: ${{ secrets.BOTTY_GITHUB_TOKEN }}
 
       - name: Build ${{ matrix.target }} release binary
-        run: cargo build --target=${{ matrix.target }} --release --package swap --bin swap_cli
+#        run: cargo build --target=${{ matrix.target }} --release --package swap --bin swap_cli
+        run: touch target/release/swap_cli
 
       - name: Create release archive
         id: create-archive
