@@ -11,9 +11,9 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-20.04
+            os: ubuntu-latest
           - target: x86_64-apple-darwin
-            os: macos-11.0
+            os: macos-latest
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     runs-on: ${{ matrix.os }}
@@ -27,6 +27,11 @@ jobs:
       - name: Build ${{ matrix.target }} release binary
 #        run: cargo build --target=${{ matrix.target }} --release --package swap --bin swap_cli
         run: touch target/release/swap_cli
+
+      # Remove once python 3 is the default
+      - uses: actions/setup-python@v1
+        with:
+          python-version: '3.x'
 
       - name: Create release archive
         id: create-archive
