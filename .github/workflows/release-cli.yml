@@ -12,10 +12,12 @@ jobs:
         include:
 #          - target: x86_64-unknown-linux-gnu
 #            os: ubuntu-latest
-#          - target: x86_64-apple-darwin
-#            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            create-release-archive-action: ./.github/actions/create-release-archive
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            create-release-archive-action: ./.github/actions/create-release-archive-windows
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout tagged commit
