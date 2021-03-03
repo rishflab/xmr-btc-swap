@@ -12,10 +12,12 @@ jobs:
         include:
 #          - target: x86_64-unknown-linux-gnu
 #            os: ubuntu-latest
-#          - target: x86_64-apple-darwin
-#            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            create-archive-action: create-release-archive
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            create-archive-action: create-release-archive-windows
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout tagged commit
@@ -26,7 +28,7 @@ jobs:
 
       - name: Build ${{ matrix.target }} release binary
         run: |
-          mkdir target/${{ matrix.target }}/release
+          mkdir -p target/${{ matrix.target }}/release
           touch target/${{ matrix.target }}/release/swap_cli
 
 #      - name: Smoke test the binary
@@ -39,7 +41,7 @@ jobs:
 
       - name: Create release archive
         id: create-archive
-        uses: ./.github/actions/create-release-archive
+        uses: ./.github/actions/${{ matrix.create-archive-action }}
         with:
           binary: swap_cli
           version: ${{ github.event.release.tag_name }}
