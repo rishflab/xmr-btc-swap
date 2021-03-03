@@ -39,7 +39,7 @@ runs:
     - name: Make archive
       shell: bash
       run: |
-        if [[ ${{ inputs.target }} == "x86_64-pc-windows-msvc" ]]; then
+        if [[ '${{ inputs.target }}' == "x86_64-pc-windows-msvc" ]]; then
             #7z a -tzip ${{ steps.create-archive-name.outputs.archive }} ./target/${{ inputs.target }}/release/${{ inputs.binary }}
             gtar -C ./target/${{ inputs.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ inputs.binary }}
         else
