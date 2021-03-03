@@ -29,10 +29,12 @@ runs:
           triple = "${{ inputs.target }}".split("-")
           arch = triple[0]
 
-        archive_name=f'${{ inputs.binary }}_${{ inputs.version }}_{os_info.system}_{arch}.tar'
+        archive_name=f'${{ inputs.binary }}_${{ inputs.version }}_{os_info.system}_{arch}.zip'
 
         print(f'::set-output name=archive::{archive_name}')
 
     - name: Make archive
       shell: bash
-      run: tar -C ./target/${{ inputs.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ inputs.binary }}
+      run: |
+        7z a -tzip ${{ steps.create-archive-name.outputs.archive }} ./target/${{ inputs.target }}/release/${{ inputs.binary }}
+        7z rn ${{ steps.create-archive-name.outputs.archive }} ${{ inputs.binary }} ${{ inputs.binary }}.exe
