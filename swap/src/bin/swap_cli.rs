@@ -31,7 +31,7 @@ use swap::{
     monero::{CreateWallet, OpenWallet},
     protocol::{
         bob,
-        bob::{cancel::CancelError, Builder},
+        bob::{cancel::CancelError, Builder, EventLoop},
     },
     seed::Seed,
 };
@@ -107,15 +107,11 @@ async fn main() -> Result<()> {
             alice_peer_id,
             alice_addr,
         } => {
-            let (bitcoin_wallet, monero_wallet) = init_wallets(
-                config,
-                bitcoin_network,
-                &wallet_data_dir,
-                monero_network,
-                seed,
-                monero_wallet_rpc_process.endpoint(),
-            )
-            .await?;
+            let bitcoin_wallet =
+                init_bitcoin_wallet(config, bitcoin_network, &wallet_data_dir, seed).await?;
+            let monero_wallet =
+                init_monero_wallet(monero_network, monero_wallet_rpc_process.endpoint()).await?;
+            let bitcoin_wallet = Arc::new(bitcoin_wallet);
 
             let swap_id = Uuid::new_v4();
 
@@ -142,19 +138,25 @@ async fn main() -> Result<()> {
 
             let send_bitcoin = bitcoin_wallet.max_giveable(TxLock::script_size()).await?;
 
-            let bob_factory = Builder::new(
-                seed,
+            let (event_loop, event_loop_handle) = EventLoop::new(
+                &seed.derive_libp2p_identity(),
+                alice_peer_id,
+                alice_addr,
+                bitcoin_wallet.clone(),
+            )?;
+            let handle = tokio::spawn(event_loop.run());
+
+            let swap = Builder::new(
                 db,
                 swap_id,
-                Arc::new(bitcoin_wallet),
+                bitcoin_wallet.clone(),
                 Arc::new(monero_wallet),
-                alice_addr,
-                alice_peer_id,
                 execution_params,
-            );
-            let (swap, event_loop) = bob_factory.with_init_params(send_bitcoin).build().await?;
+                event_loop_handle,
+            )
+            .with_init_params(send_bitcoin)
+            .build()?;
 
-            let handle = tokio::spawn(async move { event_loop.run().await });
             let swap = bob::run(swap);
             tokio::select! {
                 event_loop_result = handle => {
@@ -182,28 +184,30 @@ async fn main() -> Result<()> {
             alice_peer_id,
             alice_addr,
         } => {
-            let (bitcoin_wallet, monero_wallet) = init_wallets(
-                config,
-                bitcoin_network,
-                &wallet_data_dir,
-                monero_network,
-                seed,
-                monero_wallet_rpc_process.endpoint(),
-            )
-            .await?;
+            let bitcoin_wallet =
+                init_bitcoin_wallet(config, bitcoin_network, &wallet_data_dir, seed).await?;
+            let monero_wallet =
+                init_monero_wallet(monero_network, monero_wallet_rpc_process.endpoint()).await?;
+            let bitcoin_wallet = Arc::new(bitcoin_wallet);
 
-            let bob_factory = Builder::new(
-                seed,
+            let (event_loop, event_loop_handle) = EventLoop::new(
+                &seed.derive_libp2p_identity(),
+                alice_peer_id,
+                alice_addr,
+                bitcoin_wallet.clone(),
+            )?;
+            let handle = tokio::spawn(event_loop.run());
+
+            let swap = Builder::new(
                 db,
                 swap_id,
-                Arc::new(bitcoin_wallet),
+                bitcoin_wallet.clone(),
                 Arc::new(monero_wallet),
-                alice_addr,
-                alice_peer_id,
                 execution_params,
-            );
-            let (swap, event_loop) = bob_factory.build().await?;
-            let handle = tokio::spawn(async move { event_loop.run().await });
+                event_loop_handle,
+            )
+            .build()?;
+
             let swap = bob::run(swap);
             tokio::select! {
                 event_loop_result = handle => {
@@ -214,130 +218,59 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Command::Cancel {
-            swap_id,
-            alice_peer_id,
-            alice_addr,
-            force,
-        } => {
-            // TODO: Optimization: Only init the Bitcoin wallet, Monero wallet unnecessary
-            let (bitcoin_wallet, monero_wallet) = init_wallets(
-                config,
-                bitcoin_network,
-                &wallet_data_dir,
-                monero_network,
-                seed,
-                monero_wallet_rpc_process.endpoint(),
-            )
-            .await?;
+        Command::Cancel { swap_id, force } => {
+            let bitcoin_wallet =
+                init_bitcoin_wallet(config, bitcoin_network, &wallet_data_dir, seed).await?;
 
-            let bob_factory = Builder::new(
-                seed,
-                db,
-                swap_id,
-                Arc::new(bitcoin_wallet),
-                Arc::new(monero_wallet),
-                alice_addr,
-                alice_peer_id,
-                execution_params,
-            );
-            let (swap, event_loop) = bob_factory.build().await?;
-            let handle = tokio::spawn(async move { event_loop.run().await });
+            let resume_state = db.get_state(swap_id)?.try_into_bob()?.into();
+            let cancel =
+                bob::cancel(swap_id, resume_state, Arc::new(bitcoin_wallet), db, force).await?;
 
-            let cancel = bob::cancel(
-                swap.swap_id,
-                swap.state,
-                swap.bitcoin_wallet,
-                swap.db,
-                force,
-            );
-
-            tokio::select! {
-                event_loop_result = handle => {
-                    event_loop_result??;
-                },
-                cancel_result = cancel => {
-                    match cancel_result? {
-                        Ok((txid, _)) => {
-                            debug!("Cancel transaction successfully published with id {}", txid)
-                        }
-                        Err(CancelError::CancelTimelockNotExpiredYet) => error!(
-                            "The Cancel Transaction cannot be published yet, \
-                            because the timelock has not expired. Please try again later."
-                        ),
-                        Err(CancelError::CancelTxAlreadyPublished) => {
-                            warn!("The Cancel Transaction has already been published.")
-                        }
-                    }
+            match cancel {
+                Ok((txid, _)) => {
+                    debug!("Cancel transaction successfully published with id {}", txid)
+                }
+                Err(CancelError::CancelTimelockNotExpiredYet) => error!(
+                    "The Cancel Transaction cannot be published yet, \
+                        because the timelock has not expired. Please try again later."
+                ),
+                Err(CancelError::CancelTxAlreadyPublished) => {
+                    warn!("The Cancel Transaction has already been published.")
                 }
             }
         }
-        Command::Refund {
-            swap_id,
-            alice_peer_id,
-            alice_addr,
-            force,
-        } => {
-            let (bitcoin_wallet, monero_wallet) = init_wallets(
-                config,
-                bitcoin_network,
-                &wallet_data_dir,
-                monero_network,
-                seed,
-                monero_wallet_rpc_process.endpoint(),
-            )
-            .await?;
+        Command::Refund { swap_id, force } => {
+            let bitcoin_wallet =
+                init_bitcoin_wallet(config, bitcoin_network, &wallet_data_dir, seed).await?;
 
-            // TODO: Optimize to only use the Bitcoin wallet, Monero wallet is unnecessary
-            let bob_factory = Builder::new(
-                seed,
-                db,
+            let resume_state = db.get_state(swap_id)?.try_into_bob()?.into();
+
+            bob::refund(
                 swap_id,
-                Arc::new(bitcoin_wallet),
-                Arc::new(monero_wallet),
-                alice_addr,
-                alice_peer_id,
+                resume_state,
                 execution_params,
-            );
-            let (swap, event_loop) = bob_factory.build().await?;
-
-            let handle = tokio::spawn(async move { event_loop.run().await });
-            let refund = bob::refund(
-                swap.swap_id,
-                swap.state,
-                swap.execution_params,
-                swap.bitcoin_wallet,
-                swap.db,
+                Arc::new(bitcoin_wallet),
+                db,
                 force,
-            );
-
-            tokio::select! {
-                event_loop_result = handle => {
-                    event_loop_result??;
-                },
-                refund_result = refund => {
-                    refund_result??;
-                }
-            }
+            )
+            .await??;
         }
     };
     Ok(())
 }
 
-async fn init_wallets(
+async fn init_bitcoin_wallet(
     config: Config,
     bitcoin_network: bitcoin::Network,
     bitcoin_wallet_data_dir: &Path,
-    monero_network: monero::Network,
     seed: Seed,
-    monero_wallet_rpc_url: Url,
-) -> Result<(bitcoin::Wallet, monero::Wallet)> {
+) -> Result<bitcoin::Wallet> {
     let bitcoin_wallet = bitcoin::Wallet::new(
         config.bitcoin.electrum_rpc_url,
         config.bitcoin.electrum_http_url,
         bitcoin_network,
         bitcoin_wallet_data_dir,
-        seed.extended_private_key(bitcoin_network)?.private_key,
+        seed.derive_extended_private_key(bitcoin_network)?,
     )
     .await?;
 
@@ -346,6 +279,13 @@ async fn init_wallets(
         .await
         .context("failed to sync balance of bitcoin wallet")?;
 
+    Ok(bitcoin_wallet)
+}
+
+async fn init_monero_wallet(
+    monero_network: monero::Network,
+    monero_wallet_rpc_url: Url,
+) -> Result<monero::Wallet> {
     let monero_wallet = monero::Wallet::new(
         monero_wallet_rpc_url.clone(),
         monero_network,
@@ -377,5 +317,5 @@ async fn init_wallets(
         .await
         .context("failed to validate connection to monero-wallet-rpc")?;
 
-    Ok((bitcoin_wallet, monero_wallet))
+    Ok(monero_wallet)
 }
