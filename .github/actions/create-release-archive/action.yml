@@ -29,10 +29,18 @@ runs:
           triple = "${{ inputs.target }}".split("-")
           arch = triple[0]
 
-        archive_name=f'${{ inputs.binary }}_${{ inputs.version }}_{os_info.system}_{arch}.tar'
-
-        print(f'::set-output name=archive::{archive_name}')
+        if os_info.system == 'Windows':
+          archive_name=f'${{ inputs.binary }}_${{ inputs.version }}_{os_info.system}_{arch}.zip'
+          print(f'::set-output name=archive::{archive_name}')
+        else:
+          archive_name=f'${{ inputs.binary }}_${{ inputs.version }}_{os_info.system}_{arch}.tar'
+          print(f'::set-output name=archive::{archive_name}')
 
     - name: Make archive
       shell: bash
-      run: gtar -C ./target/${{ inputs.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ inputs.binary }}
+      run: |
+        if [[${{ inputs.target }} == "x86_64-pc-windows-msvc"]]; then
+            7za a -tzip ${{ steps.create-archive-name.outputs.archive }} ./target/${{ inputs.target }}/release/${{ inputs.binary }}
+        else
+            gtar -C ./target/${{ inputs.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ inputs.binary }}
+        fi
