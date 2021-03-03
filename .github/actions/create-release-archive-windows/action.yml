@@ -35,4 +35,6 @@ runs:
 
     - name: Make archive
       shell: bash
-      run: tar -C ./target/${{ inputs.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ inputs.binary }}
+      run: |
+        cp -p ./target/${{ matrix.target }}/release/${{ inputs.binary }} ${{ inputs.binary }}.exe
+        7z a -tzip ${{ steps.create-archive-name.outputs.archive }} ${{ inputs.binary }}.exe
