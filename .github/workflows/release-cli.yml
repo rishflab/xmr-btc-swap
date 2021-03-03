@@ -35,13 +35,13 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Create release archive
-        id: create-archive
-        uses: ./.github/actions/create-release-archive
-        with:
-          binary: swap_cli
-          version: ${{ github.event.release.tag_name }}
-          target: ${{ matrix.target }}
+#      - name: Create release archive
+#        id: create-archive
+#        uses: ./.github/actions/create-release-archive
+#        with:
+#          binary: swap_cli
+#          version: ${{ github.event.release.tag_name }}
+#          target: ${{ matrix.target }}
 
       - name: Upload ${{ matrix.os }} release binary
         uses: actions/upload-release-asset@v1
@@ -49,6 +49,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./${{ steps.create-archive.outputs.archive }}
-          asset_name: ${{ steps.create-archive.outputs.archive }}
+          asset_path: target/${{ matrix.target }}/release/swap_cli
+          asset_name: swap_cli
           asset_content_type: application/gzip
